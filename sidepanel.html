@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoordX Pro</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="sidepanel">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo-icon">📍</div>
+        <div class="header-text">
+          <h1>CoordX Pro</h1>
+          <span class="subtitle" id="statusText">Searching for location...</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <label class="toggle-switch" title="Toggle tracking">
+          <input type="checkbox" id="trackingToggle" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </header>
+
+    <!-- Coordinates Display -->
+    <section class="coord-section" id="coordSection">
+      <div class="coord-card">
+        <div class="coord-row">
+          <span class="coord-label">LAT</span>
+          <span class="coord-value" id="latValue">—</span>
+        </div>
+        <div class="coord-divider"></div>
+        <div class="coord-row">
+          <span class="coord-label">LNG</span>
+          <span class="coord-value" id="lngValue">—</span>
+        </div>
+      </div>
+      <button class="copy-btn" id="copyCoordsBtn" title="Copy coordinates">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span>Copy Coords</span>
+      </button>
+    </section>
+
+    <!-- Address Info -->
+    <section class="address-section" id="addressSection">
+      <h2 class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+          <circle cx="12" cy="10" r="3"></circle>
+        </svg>
+        Address Details
+      </h2>
+      <div class="address-grid" id="addressGrid">
+        <div class="address-item">
+          <span class="address-label">Display Name</span>
+          <span class="address-value" id="addrDisplayName">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">Neighborhood</span>
+          <span class="address-value" id="addrNeighborhood">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">Suburb</span>
+          <span class="address-value" id="addrSuburb">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">City</span>
+          <span class="address-value" id="addrCity">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">District</span>
+          <span class="address-value" id="addrDistrict">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">State</span>
+          <span class="address-value" id="addrState">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">Postcode</span>
+          <span class="address-value" id="addrPostcode">—</span>
+        </div>
+        <div class="address-item">
+          <span class="address-label">Country</span>
+          <span class="address-value" id="addrCountry">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Map Section -->
+    <section class="map-section">
+      <h2 class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+          <line x1="8" y1="2" x2="8" y2="18"></line>
+          <line x1="16" y1="6" x2="16" y2="22"></line>
+        </svg>
+        Location Map
+      </h2>
+      <div class="map-container">
+        <iframe id="mapFrame" src="map.html" frameborder="0" allowfullscreen></iframe>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <button class="reset-btn" id="resetBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        New Round
+      </button>
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
