@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Advanced location tracker for GeoGuessr, OpenGuessr & WorldGuessr — bug-free side panel with auto-detect, interactive map & detailed address info.",
   "permissions": [
     "sidePanel",
@@ -50,11 +50,11 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["map.html", "map.js"],
+      "resources": ["map.html", "map.js", "leaflet/*", "leaflet/images/*"],
       "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: https:; connect-src 'self' https://nominatim.openstreetmap.org/ https://*.tile.openstreetmap.org/"
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org; connect-src 'self' https://nominatim.openstreetmap.org/ https://*.tile.openstreetmap.org/ https://*.basemaps.cartocdn.com/"
   }
 }

@@ -17,6 +17,9 @@
     attributionControl: true
   });
 
+  // BUG FIX: Set Leaflet icon path to local bundled images
+  L.Icon.Default.imagePath = 'leaflet/images';
+
   // Dark-themed tile layer for consistent UI
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
@@ -80,9 +83,14 @@
 
   window.addEventListener('message', (event) => {
     const data = event.data;
+    if (!data || typeof data !== 'object') return;
 
     if (data.type === 'updateCoords') {
-      const { lat, lng } = data;
+      // Validate coordinate data
+      const lat = parseFloat(data.lat);
+      const lng = parseFloat(data.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
 
       // Update or create marker
       if (marker) {

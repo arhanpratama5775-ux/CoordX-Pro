@@ -8,6 +8,12 @@
  * - Toggle and reset functionality
  * - Copy-to-clipboard for coordinates
  * - Restoring last known state on panel reopen (fixes the disappearing bug)
+ * 
+ * Bug fixes in v1.0.1:
+ * - Map now updates on side panel reopen (was missing postToMap call in init)
+ * - Reverse geocoding has retry limit (was infinite loop)
+ * - Duplicate coordinate updates prevented (onMessage + onChanged both firing)
+ * - Map iframe load race condition handled properly
  */
 
 (function () {
@@ -39,6 +45,11 @@
 
   let currentCoords = null;
   let geocodeTimeout = null;
+  let geocodeRetryCount = 0;
+  const MAX_GEOCODE_RETRIES = 2;
+
+  // Flag to prevent duplicate processing from onMessage + onChanged
+  let processingCoords = false;
 
   /* ─── Initialize ────────────────────────────────────── */
 
@@ -47,6 +58,8 @@
    * This is THE key fix for the "side panel disappearing" issue —
    * when the panel reopens, it reads the persisted state instead of
    * showing blank data.
+   * 
+   * v1.0.1 FIX: Also sends coordinates to map iframe on restore.
    */
   async function init() {
     // Restore tracking toggle state
@@ -62,6 +75,9 @@
       updateCoordinates(storage.lastCoords.lat, storage.lastCoords.lng);
       els.statusText.textContent = 'Location found!';
       els.statusText.classList.add('found');
+
+      // BUG FIX: Also update the map iframe on restore!
+      postToMap(storage.lastCoords.lat, storage.lastCoords.lng);
     }
 
     // Restore address if available
@@ -75,6 +91,7 @@
       if (status.lastCoords && !currentCoords) {
         currentCoords = status.lastCoords;
         updateCoordinates(status.lastCoords.lat, status.lastCoords.lng);
+        postToMap(status.lastCoords.lat, status.lastCoords.lng);
         els.statusText.textContent = 'Location found!';
         els.statusText.classList.add('found');
       }
@@ -90,40 +107,55 @@
 
   init();
 
+  /* ─── Coordinate Update Handler (deduplicated) ──────── */
+
+  /**
+   * Single entry point for handling new coordinates.
+   * Prevents duplicate processing from onMessage + onChanged.
+   */
+  function handleNewCoords(lat, lng, source) {
+    // Skip if we already have these exact coordinates
+    if (currentCoords && 
+        currentCoords.lat === lat && 
+        currentCoords.lng === lng) {
+      console.log(`[CoordX Pro] Duplicate coord update from ${source}, skipping`);
+      return;
+    }
+
+    console.log(`[CoordX Pro] New coords from ${source}:`, lat, lng);
+    currentCoords = { lat, lng };
+    geocodeRetryCount = 0; // Reset geocode retry counter on new coords
+
+    updateCoordinates(lat, lng);
+    postToMap(lat, lng);
+    reverseGeocode(lat, lng);
+    
+    els.statusText.textContent = 'Location found!';
+    els.statusText.classList.add('found');
+    els.statusText.classList.remove('paused');
+  }
+
   /* ─── Message Listener ──────────────────────────────── */
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'coordFound') {
-      currentCoords = { lat: message.lat, lng: message.lng };
-      updateCoordinates(message.lat, message.lng);
-      els.statusText.textContent = 'Location found!';
-      els.statusText.classList.add('found');
-
-      // Send to map iframe
-      postToMap(message.lat, message.lng);
-
-      // Reverse geocode
-      reverseGeocode(message.lat, message.lng);
+      handleNewCoords(message.lat, message.lng, 'onMessage');
     }
   });
 
   /**
    * Also listen for storage changes — this ensures we catch updates
    * even if the message was sent while the panel was closed.
+   * 
+   * BUG FIX: Use handleNewCoords() which deduplicates against currentCoords,
+   * so we don't double-process if onMessage already handled it.
    */
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
 
     if (changes.lastCoords && changes.lastCoords.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      if (!currentCoords || currentCoords.lat !== lat || currentCoords.lng !== lng) {
-        currentCoords = { lat, lng };
-        updateCoordinates(lat, lng);
-        postToMap(lat, lng);
-        reverseGeocode(lat, lng);
-        els.statusText.textContent = 'Location found!';
-        els.statusText.classList.add('found');
-      }
+      handleNewCoords(lat, lng, 'onChanged');
     }
   });
 
@@ -137,28 +169,40 @@
 
   /* ─── Map Communication ─────────────────────────────── */
 
+  /**
+   * Send coordinates to the map iframe.
+   * BUG FIX: Handles race condition where iframe isn't loaded yet.
+   * Uses a proper load listener instead of just checking contentWindow.
+   */
   function postToMap(lat, lng) {
     const mapFrame = els.mapFrame;
-    if (mapFrame && mapFrame.contentWindow) {
-      mapFrame.contentWindow.postMessage({
-        type: 'updateCoords',
-        lat,
-        lng
-      }, '*');
-    } else {
-      // Retry after iframe loads
-      mapFrame.addEventListener('load', () => {
+    
+    const sendMsg = () => {
+      if (mapFrame.contentWindow) {
         mapFrame.contentWindow.postMessage({
           type: 'updateCoords',
           lat,
           lng
         }, '*');
-      }, { once: true });
+      }
+    };
+
+    // If iframe is already loaded, send immediately
+    if (mapFrame.contentDocument && mapFrame.contentDocument.readyState === 'complete') {
+      sendMsg();
+    } else {
+      // Wait for iframe to load
+      mapFrame.addEventListener('load', sendMsg, { once: true });
     }
   }
 
   /* ─── Reverse Geocoding ─────────────────────────────── */
 
+  /**
+   * Reverse geocode coordinates via Nominatim API.
+   * BUG FIX: Has max retry limit to prevent infinite loop.
+   * Retries up to MAX_GEOCODE_RETRIES times on failure.
+   */
   async function reverseGeocode(lat, lng) {
     // Debounce rapid calls
     if (geocodeTimeout) clearTimeout(geocodeTimeout);
@@ -173,16 +217,34 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
         const address = parseAddress(data);
         updateAddressUI(address);
 
         // Persist address for panel reopen
         await chrome.storage.local.set({ lastAddress: address });
 
+        // Reset retry counter on success
+        geocodeRetryCount = 0;
+
       } catch (err) {
         console.error('[CoordX Pro] Reverse geocoding failed:', err.message);
-        // Retry once after 2 seconds
-        setTimeout(() => reverseGeocode(lat, lng), 2000);
+        
+        // BUG FIX: Only retry up to MAX_GEOCODE_RETRIES times
+        if (geocodeRetryCount < MAX_GEOCODE_RETRIES) {
+          geocodeRetryCount++;
+          console.log(`[CoordX Pro] Geocode retry ${geocodeRetryCount}/${MAX_GEOCODE_RETRIES}`);
+          setTimeout(() => reverseGeocode(lat, lng), 2000 * geocodeRetryCount);
+        } else {
+          console.warn('[CoordX Pro] Max geocode retries reached, giving up');
+          // Show error in UI
+          els.addrDisplayName.textContent = 'Address not available';
+          els.addressSection.classList.add('active');
+        }
       }
     }, 300);
   }
@@ -229,8 +291,12 @@
         enabled
       });
       els.statusText.textContent = enabled ? 'Searching for location...' : 'Tracking paused';
-      els.statusText.classList.toggle('found', false);
-      els.statusText.classList.toggle('paused', !enabled);
+      els.statusText.classList.remove('found');
+      if (!enabled) {
+        els.statusText.classList.add('paused');
+      } else {
+        els.statusText.classList.remove('paused');
+      }
     } catch (e) {
       console.error('[CoordX Pro] Toggle failed:', e.message);
     }
@@ -247,6 +313,7 @@
 
     // Clear UI
     currentCoords = null;
+    geocodeRetryCount = 0;
     els.latValue.textContent = '—';
     els.lngValue.textContent = '—';
     els.coordSection.classList.remove('active');
@@ -263,8 +330,9 @@
     els.addressSection.classList.remove('active');
 
     // Reset map
-    if (els.mapFrame.contentWindow) {
-      els.mapFrame.contentWindow.postMessage({ type: 'resetMap' }, '*');
+    const mapFrame = els.mapFrame;
+    if (mapFrame.contentWindow) {
+      mapFrame.contentWindow.postMessage({ type: 'resetMap' }, '*');
     }
   });
 
@@ -283,6 +351,15 @@
       }, 1500);
     }).catch(err => {
       console.error('[CoordX Pro] Copy failed:', err.message);
+      // Fallback: use execCommand
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
     });
   });
 

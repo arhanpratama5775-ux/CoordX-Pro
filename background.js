@@ -30,10 +30,19 @@ const SUPPORTED_SITES = [
 /**
  * Initialize side panel behavior — open on action click,
  * and stay persistent across tab switches.
+ * 
+ * BUG FIX: Call setPanelBehavior on BOTH onInstalled AND startup.
+ * Service workers can be killed and restarted by Chrome at any time,
+ * so onInstalled alone is not sufficient — we also need to set it
+ * every time the service worker starts up.
  */
-chrome.runtime.onInstalled.addListener(() => {
+function initSidePanel() {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
     .catch(err => console.warn('[CoordX Pro] setPanelBehavior failed:', err));
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  initSidePanel();
   
   // Initialize default state
   chrome.storage.local.set({
@@ -42,6 +51,27 @@ chrome.runtime.onInstalled.addListener(() => {
     lastAddress: null
   });
 });
+
+// Also set panel behavior on service worker startup
+// (Chrome kills and restarts service workers, losing in-memory state)
+chrome.runtime.onStartup.addListener(() => {
+  initSidePanel();
+});
+
+// Immediately invoke on script load too (for soft restarts)
+initSidePanel();
+
+/**
+ * BUG FIX: Restore tracking state from storage on service worker restart.
+ * Service workers are ephemeral — Chrome can kill and restart them at any time,
+ * which would reset `trackingEnabled` and `searching` to their defaults.
+ */
+chrome.storage.local.get(['trackingEnabled']).then(result => {
+  if (result.trackingEnabled !== undefined) {
+    trackingEnabled = result.trackingEnabled;
+    searching = trackingEnabled; // If tracking was off, searching should be false too
+  }
+}).catch(err => console.warn('[CoordX Pro] Failed to restore state:', err));
 
 /**
  * When user navigates to a supported site, open the side panel automatically.

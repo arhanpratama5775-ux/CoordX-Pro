@@ -42,13 +42,24 @@
       if (tab) {
         await chrome.sidePanel.open({ tabId: tab.id });
       }
-      window.close();
     } catch (err) {
       console.error('[CoordX Pro] Could not open side panel:', err.message);
-      // Fallback: open in new tab
-      chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') });
-      window.close();
+      // Fallback: try opening via window.open
+      // chrome.sidePanel.open can fail if not triggered by user gesture
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+          await chrome.sidePanel.setOptions({
+            tabId: tab.id,
+            path: 'sidepanel.html',
+            enabled: true
+          });
+        }
+      } catch (e2) {
+        console.error('[CoordX Pro] Fallback also failed:', e2.message);
+      }
     }
+    window.close();
   });
 
   /* ─── Toggle Tracking ───────────────────────────────── */
