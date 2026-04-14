@@ -1,101 +1,67 @@
-# CoordX Pro
+# CoordX Pro 📍
 
-Advanced location tracker Chrome extension for **GeoGuessr**, **OpenGuessr**, and **WorldGuessr** players.
+**Location tracker for WorldGuessr** — Auto-detect Street View coordinates with detailed address info.
 
-## Features
+![Version](https://img.shields.io/badge/version-1.1.4-blue)
+![Platform](https://img.shields.io/badge/platform-Chrome-green)
 
-- **Automatic Coordinate Detection** — Intercepts network requests at page level to extract real GPS coordinates
-- **Interactive Map** — Leaflet-powered dark-themed map with smooth fly-to animations
-- **Detailed Address Breakdown** — Reverse geocoding via Nominatim with full address details
-- **Persistent Side Panel** — State survives panel close/reopen and tab switching (the key bug fix!)
-- **Quick Toggle** — Enable/disable tracking from the side panel or extension popup
-- **Copy Coordinates** — One-click copy lat/lng to clipboard
-- **Dark Theme** — Discord-inspired glassmorphism UI
+## ✨ Features
 
-## v1.0.2 Update - Critical Fix
+- 🎯 **Auto-detect coordinates** from Street View iframe
+- 🗺️ **Interactive map** with location marker
+- 📍 **Reverse geocoding** — get full address details
+- 🔄 **Auto new round detection** — works in multiplayer!
+- 📋 **Copy coordinates** with one click
+- 🌙 **Dark theme** UI
 
-This version fixes the core issue where coordinates were not being detected:
+## 🎮 Supported Games
 
-- **Content Script Injection** — Now injects a page script to intercept fetch/XHR at the page level
-- **Response Body Access** — Can now read actual response bodies (service workers cannot do this directly)
-- **Multiple Parse Strategies** — Improved coordinate parsing with multiple fallback strategies
-- **Broader URL Detection** — Enhanced pattern matching for GeoPhotoService and related APIs
+| Game | Status |
+|------|--------|
+| **WorldGuessr** | ✅ Working |
+| GeoGuessr | 🚧 Coming Soon |
+| OpenGuessr | 🚧 Coming Soon |
 
-## Supported Platforms
+## 📦 Installation
 
-- **GeoGuessr** — All game modes (Campaign, Classic, Duel, Battle Royale, Party, Community Maps)
-- **OpenGuessr** — Standard, Capital Cities, Famous Places, Country Guessr, Competitions, Community Maps
-- **WorldGuessr** — Singleplayer, Ranked Duel, Unranked Match, Party, Community Maps
-- **CrazyGames** — Via embedded game players
+1. Download or clone this repo
+2. Open Chrome → `chrome://extensions/`
+3. Enable **Developer mode** (top right)
+4. Click **Load unpacked**
+5. Select the `CoordX-Pro` folder
+6. Open WorldGuessr and play!
 
-## Installation
+## 🚀 How to Use
 
-1. Download or clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable **Developer mode** (top-right toggle)
-4. Click **Load unpacked** and select the `CoordX-Pro` folder
-5. The extension icon will appear in your toolbar
+1. Go to [WorldGuessr](https://worldguessr.com)
+2. Start a game (single player or multiplayer)
+3. Click the extension icon to open side panel
+4. Coordinates will auto-detect when Street View loads
+5. Click **New Round** button to reset for next round
 
-## Usage
+## ⚠️ Known Issues
 
-1. Navigate to a supported game (GeoGuessr, OpenGuessr, or WorldGuessr)
-2. Click the CoordX Pro icon or it will auto-open the side panel
-3. Start a round — coordinates will be automatically detected
-4. View the location on the map with full address details
-5. Click **New Round** to reset for the next round
+- If coordinates don't update, try refreshing the page
+- For multiplayer, coords should auto-detect each new round
 
-## Bug Fixes vs Original CoordX-Locations
+## 📝 Changelog
 
-| Issue | Original | CoordX Pro |
-|-------|----------|------------|
-| Coordinates not detected | Service worker can't read response body | Content script hooks fetch/XHR at page level |
-| Side panel disappears on tab switch | No fix — panel stays closed | Auto-enables panel on supported sites + state persists in `chrome.storage` |
-| Duplicate `onMessage` listeners | Two listeners in background.js | Single consolidated listener |
-| Overly broad permissions | `<all_urls>` host permission | Restricted to specific game domains + Google API domains |
-| No state persistence | Panel shows blank on reopen | Restores last coordinates + address from storage |
-| No error recovery | Failed fetch = no coords | Retry logic (up to 2 retries) with exponential backoff |
-| No popup | Must manually open side panel | Click icon to open panel + quick toggle popup |
-| Broad URL filter | All URLs | Specific GeoPhotoService domains only |
+### v1.1.4
+- Fix map marker (now uses circle marker)
+- Fix geocoding always updating for new rounds
 
-## File Structure
+### v1.1.0 - v1.1.3
+- Auto-detect new rounds in multiplayer
+- Fix various bugs with coordinate detection
 
-```
-CoordX-Pro/
-├── manifest.json        — Extension manifest (MV3)
-├── background.js        — Service worker: request interception + side panel management
-├── content.js           — Content script: hooks fetch/XHR to read response bodies
-├── sidepanel.html       — Side panel UI
-├── sidepanel.js         — Side panel logic
-├── style.css            — Dark theme styles
-├── map.html             — Map iframe page
-├── map.js               — Leaflet map logic
-├── popup.html           — Extension popup UI
-├── popup.js             — Popup logic
-├── assets/
-│   ├── icon16.png       — 16x16 icon
-│   ├── icon48.png       — 48x48 icon
-│   └── icon128.png      — 128x128 icon
-└── README.md
-```
+### v1.0.x
+- Initial release
+- Basic coordinate detection for WorldGuessr
 
-## Technical Details
+## 📄 License
 
-- **Manifest V3** — Modern Chrome extension API
-- **Side Panel API** — with `setPanelBehavior({ openPanelOnActionClick: true })` for reliability
-- **Storage API** — `chrome.storage.local` for state persistence across panel lifecycles
-- **Content Script Injection** — Page-level fetch/XHR interception to read response bodies
-- **Web Request API** — `chrome.webRequest.onCompleted` for additional request detection
-- **Leaflet + CARTO Dark Tiles** — Beautiful dark-themed map
-- **Nominatim Reverse Geocoding** — Free, no API key required
+MIT License — use freely!
 
-## How It Works
+---
 
-1. Content script is injected into supported game pages
-2. A page script is injected to hook `window.fetch` and `XMLHttpRequest`
-3. When a GeoPhotoService or Street View API request is made, the response is captured
-4. Coordinates are parsed from the response using multiple strategies
-5. Coordinates are sent to the background script and stored
-6. Side panel displays the coordinates, reverse-geocoded address, and map location
-
-## Download 
-https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
+Made with ❤️ for geography game enthusiasts
