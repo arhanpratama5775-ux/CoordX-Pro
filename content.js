@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.0.8)
+ * CoordX Pro — Content Script (v1.0.9)
  *
  * WorldGuessr uses an iframe for Street View with coords in the URL!
  * Format: https://www.google.com/maps/embed/v1/streetview?location=LAT,LNG&key=...
@@ -11,7 +11,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.0.8 loaded on:', window.location.href);
+  console.log('[CoordX Pro] 🚀 Content script v1.0.9 loaded on:', window.location.href);
 
   function isValidCoord(lat, lng) {
     return (
