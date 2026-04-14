@@ -75,7 +75,7 @@
     
     currentCoords = { lat, lng };
 
-    // Update UI
+    // ALWAYS update UI and map (even for same coords - might be new round)
     updateCoordinates(lat, lng);
     postToMap(lat, lng);
     
@@ -83,7 +83,7 @@
     els.statusText.classList.add('found');
     els.statusText.classList.remove('paused');
     
-    // Only fetch geocoding if coords are new
+    // Fetch geocoding for new coords
     if (isNew) {
       reverseGeocode(lat, lng);
     }
@@ -117,13 +117,32 @@
   /* ─── Map Communication ─────────────────────────────── */
 
   function postToMap(lat, lng) {
-    if (els.mapFrame.contentWindow) {
-      els.mapFrame.contentWindow.postMessage({
-        type: 'updateCoords',
-        lat,
-        lng
-      }, '*');
+    console.log('[CoordX Pro] Sending to map:', lat, lng);
+    
+    const mapFrame = els.mapFrame;
+    if (!mapFrame) {
+      console.warn('[CoordX Pro] Map frame not found');
+      return;
     }
+
+    // Try multiple times to ensure message is received
+    const sendMsg = () => {
+      if (mapFrame.contentWindow) {
+        mapFrame.contentWindow.postMessage({
+          type: 'updateCoords',
+          lat,
+          lng
+        }, '*');
+        console.log('[CoordX Pro] Message sent to map');
+      }
+    };
+
+    // Send immediately
+    sendMsg();
+    
+    // Also send after short delays (in case iframe is loading)
+    setTimeout(sendMsg, 100);
+    setTimeout(sendMsg, 300);
   }
 
   /* ─── Reverse Geocoding ─────────────────────────────── */
