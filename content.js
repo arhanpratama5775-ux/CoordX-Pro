@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.1.2)
+ * CoordX Pro — Content Script (v1.1.3)
  *
  * SUPER AGGRESSIVE mode for multiplayer new round detection
  * Always sends coordinates when iframe src changes
@@ -11,7 +11,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.1.2 AGGRESSIVE mode');
+  console.log('[CoordX Pro] 🚀 Content script v1.1.3 AGGRESSIVE mode');
 
   function isValidCoord(lat, lng) {
     return (

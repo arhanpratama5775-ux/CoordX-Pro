@@ -1,7 +1,7 @@
 /**
- * CoordX Pro — Side Panel Script (v1.1.2)
+ * CoordX Pro — Side Panel Script (v1.1.3)
  * 
- * FIX: Always clear old address and fetch new geocoding for new coordinates
+ * FIX: Restore coords from storage on open, but always fetch new geocoding
  */
 
 (function () {
@@ -32,21 +32,33 @@
   let currentCoords = null;
   let geocodeTimeout = null;
 
-  console.log('[CoordX Pro] Side panel v1.1.2 loaded');
+  console.log('[CoordX Pro] Side panel v1.1.3 loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
   async function init() {
     console.log('[CoordX Pro] Initializing...');
     
-    const storage = await chrome.storage.local.get(['trackingEnabled']);
+    const storage = await chrome.storage.local.get(['trackingEnabled', 'lastCoords']);
 
     if (storage.trackingEnabled !== undefined) {
       els.trackingToggle.checked = storage.trackingEnabled;
     }
 
-    // DON'T restore old coords/address - always start fresh
-    els.statusText.textContent = 'Searching for location...';
+    // Restore coords if available (but NOT address - we'll fetch fresh)
+    if (storage.lastCoords) {
+      console.log('[CoordX Pro] Restoring coords:', storage.lastCoords);
+      currentCoords = storage.lastCoords;
+      updateCoordinates(storage.lastCoords.lat, storage.lastCoords.lng);
+      els.statusText.textContent = 'Location found!';
+      els.statusText.classList.add('found');
+      postToMap(storage.lastCoords.lat, storage.lastCoords.lng);
+      
+      // Always fetch fresh geocoding
+      reverseGeocode(storage.lastCoords.lat, storage.lastCoords.lng);
+    } else {
+      els.statusText.textContent = 'Searching for location...';
+    }
   }
 
   init();
@@ -54,14 +66,16 @@
   /* ─── Coordinate Update Handler ─────────────────────── */
 
   function handleNewCoords(lat, lng, source) {
-    // ALWAYS update - no duplicate check
-    console.log(`[CoordX Pro] ✅ NEW coords from ${source}:`, lat, lng);
+    // Check if this is actually new coords
+    const isNew = !currentCoords || 
+        Math.abs(currentCoords.lat - lat) > 0.0001 ||
+        Math.abs(currentCoords.lng - lng) > 0.0001;
+
+    console.log(`[CoordX Pro] ✅ Coords from ${source}:`, lat, lng, isNew ? '(NEW)' : '(same)');
+    
     currentCoords = { lat, lng };
 
-    // Clear old address from storage
-    chrome.storage.local.remove(['lastAddress', 'lastCoords']);
-
-    // Update UI immediately
+    // Update UI
     updateCoordinates(lat, lng);
     postToMap(lat, lng);
     
@@ -69,8 +83,10 @@
     els.statusText.classList.add('found');
     els.statusText.classList.remove('paused');
     
-    // ALWAYS fetch new geocoding
-    reverseGeocode(lat, lng);
+    // Only fetch geocoding if coords are new
+    if (isNew) {
+      reverseGeocode(lat, lng);
+    }
   }
 
   /* ─── Message Listener ──────────────────────────────── */
@@ -101,10 +117,8 @@
   /* ─── Map Communication ─────────────────────────────── */
 
   function postToMap(lat, lng) {
-    const mapFrame = els.mapFrame;
-    
-    if (mapFrame.contentWindow) {
-      mapFrame.contentWindow.postMessage({
+    if (els.mapFrame.contentWindow) {
+      els.mapFrame.contentWindow.postMessage({
         type: 'updateCoords',
         lat,
         lng
@@ -117,7 +131,7 @@
   async function reverseGeocode(lat, lng) {
     console.log('[CoordX Pro] 🌍 Geocoding:', lat, lng);
     
-    // Clear old address IMMEDIATELY and show loading
+    // Clear old address and show loading
     els.addrDisplayName.textContent = 'Loading address...';
     els.addrNeighborhood.textContent = '—';
     els.addrSuburb.textContent = '—';
@@ -142,27 +156,23 @@
           }
         });
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
         console.log('[CoordX Pro] Geocode result:', data);
         
-        if (data.error) {
-          throw new Error(data.error);
-        }
+        if (data.error) throw new Error(data.error);
 
         const address = parseAddress(data);
         updateAddressUI(address);
 
-        // Save new address
-        chrome.storage.local.set({ lastAddress: address, lastCoords: { lat, lng } });
+        // Save to storage
+        chrome.storage.local.set({ lastAddress: address });
 
       } catch (err) {
         console.error('[CoordX Pro] Geocoding failed:', err.message);
         
-        // Show coordinates as fallback
+        // Show coords as fallback
         updateAddressUI({
           displayName: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
           neighborhood: '—',
