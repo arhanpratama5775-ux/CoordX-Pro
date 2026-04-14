@@ -1,115 +1,115 @@
 /**
- * CoordX Pro — Map Script (loaded in iframe)
+ * CoordX Pro — Map Script (v1.1.3)
  * 
  * Uses Leaflet with OpenStreetMap tiles.
- * Receives coordinate updates via postMessage from sidepanel.js.
+ * Simple circle marker - no image dependencies.
  */
 
 (function () {
   'use strict';
 
-  /* ─── Map Initialization ────────────────────────────── */
+  console.log('[CoordX Pro] Map script loaded');
 
+  // Initialize map
   const map = L.map('map', {
     center: [20, 0],
     zoom: 2,
-    zoomControl: true,
-    attributionControl: true
+    zoomControl: true
   });
 
-  // BUG FIX: Set Leaflet icon path to local bundled images
-  L.Icon.Default.imagePath = 'leaflet/images';
-
-  // Dark-themed tile layer for consistent UI
+  // Dark tiles
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    attribution: '&copy; OSM &copy; CARTO',
     subdomains: 'abcd',
     maxZoom: 19
   }).addTo(map);
 
-  // Custom marker icon
-  const markerIcon = L.divIcon({
-    className: 'custom-marker',
-    html: `<div style="
-      width: 24px; height: 24px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
-      border: 3px solid #fff;
-      border-radius: 50% 50% 50% 0;
-      transform: rotate(-45deg);
-      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.5);
-    "></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 24],
-    popupAnchor: [0, -24]
-  });
-
+  // Simple circle marker (no image needed)
   let marker = null;
   let coordDisplay = null;
 
-  /* ─── Coordinate Display Overlay ────────────────────── */
+  function updateMarker(lat, lng) {
+    console.log('[CoordX Pro] Map updating marker:', lat, lng);
 
-  function addCoordDisplay(lat, lng) {
-    if (coordDisplay) {
-      coordDisplay.setLatLng([lat, lng]);
-      coordDisplay.setContent(formatCoordText(lat, lng));
-      return;
+    // Remove old marker
+    if (marker) {
+      map.removeLayer(marker);
     }
 
+    // Create new marker with circle
+    marker = L.circleMarker([lat, lng], {
+      radius: 12,
+      fillColor: '#6366f1',
+      color: '#fff',
+      weight: 3,
+      opacity: 1,
+      fillOpacity: 0.9
+    }).addTo(map);
+
+    // Add pulsing effect with CSS
+    marker.on('add', function() {
+      const el = this.getElement();
+      if (el) {
+        el.style.animation = 'pulse 2s infinite';
+      }
+    });
+
+    // Fly to location
+    map.flyTo([lat, lng], 15, {
+      duration: 1,
+      easeLinearity: 0.5
+    });
+
+    // Add coordinate popup
+    if (coordDisplay) {
+      map.closePopup(coordDisplay);
+    }
+    
     coordDisplay = L.popup({
       closeButton: false,
       className: 'coord-popup',
-      offset: [0, -28]
+      offset: [0, -20]
     })
     .setLatLng([lat, lng])
-    .setContent(formatCoordText(lat, lng))
-    .openOn(map);
-  }
-
-  function formatCoordText(lat, lng) {
-    return `<div style="
-      font-family: 'Inter', -apple-system, sans-serif;
+    .setContent(`<div style="
+      font-family: -apple-system, sans-serif;
       font-size: 11px;
       font-weight: 600;
       color: #e2e8f0;
-      text-align: center;
-      background: rgba(15, 23, 42, 0.9);
-      padding: 4px 10px;
-      border-radius: 6px;
-      border: 1px solid rgba(99, 102, 241, 0.3);
-    ">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>`;
+      background: rgba(15, 23, 42, 0.95);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      white-space: nowrap;
+    ">📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</div>`)
+    .openOn(map);
+
+    console.log('[CoordX Pro] Marker updated successfully');
   }
 
-  /* ─── Message Handler ───────────────────────────────── */
-
+  // Listen for messages from sidepanel
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (!data || typeof data !== 'object') return;
 
     if (data.type === 'updateCoords') {
-      // Validate coordinate data
       const lat = parseFloat(data.lat);
       const lng = parseFloat(data.lng);
-      if (isNaN(lat) || isNaN(lng)) return;
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
-
-      // Update or create marker
-      if (marker) {
-        marker.setLatLng([lat, lng]);
-      } else {
-        marker = L.marker([lat, lng], { icon: markerIcon }).addTo(map);
+      
+      if (isNaN(lat) || isNaN(lng)) {
+        console.warn('[CoordX Pro] Invalid coords received');
+        return;
+      }
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.warn('[CoordX Pro] Coords out of range');
+        return;
       }
 
-      // Fly to location with animation
-      map.flyTo([lat, lng], 16, {
-        duration: 1.2,
-        easeLinearity: 0.25
-      });
-
-      // Show coordinate display
-      addCoordDisplay(lat, lng);
+      updateMarker(lat, lng);
     }
 
     if (data.type === 'resetMap') {
+      console.log('[CoordX Pro] Resetting map');
       if (marker) {
         map.removeLayer(marker);
         marker = null;
@@ -118,23 +118,22 @@
         map.closePopup();
         coordDisplay = null;
       }
-      map.flyTo([20, 0], 2, { duration: 0.8 });
+      map.flyTo([20, 0], 2, { duration: 0.5 });
     }
   });
 
-  /* ─── Fix map rendering after iframe resize ─────────── */
+  // Fix map size after iframe loads
+  setTimeout(() => map.invalidateSize(), 100);
+  setTimeout(() => map.invalidateSize(), 500);
+  setTimeout(() => map.invalidateSize(), 1000);
 
-  // Leaflet sometimes doesn't render correctly in iframes
-  // Force invalidateSize after a short delay
-  setTimeout(() => {
-    map.invalidateSize();
-  }, 200);
-
-  // Also handle visibility changes
+  // Fix on visibility change
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       setTimeout(() => map.invalidateSize(), 100);
     }
   });
+
+  console.log('[CoordX Pro] Map ready');
 
 })();
