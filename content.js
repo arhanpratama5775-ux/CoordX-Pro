@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.0.3)
+ * CoordX Pro — Content Script (v1.0.4)
  *
  * Injects a page script to intercept fetch/XHR/WebSocket responses at the page level.
  * This is necessary because Chrome MV3 service workers cannot access response bodies.
@@ -16,16 +16,22 @@
 
   /**
    * Inject a script tag into the page to hook into fetch/XHR/WebSocket.
+   * MUST append to DOM first, then remove (the script will have executed).
    */
   function injectPageScript() {
+    // Check if already injected
+    if (window.__coordxPageInjected) return;
+
     const script = document.createElement('script');
+    script.id = 'coordx-page-script';
+
     script.textContent = `
 (function() {
   // Don't inject twice
   if (window.__coordxPageInjected) return;
   window.__coordxPageInjected = true;
 
-  console.log('[CoordX Pro] Page script injected');
+  console.log('[CoordX Pro] Page script injected successfully!');
 
   // Track found coordinates to avoid duplicates
   let lastFoundCoords = null;
@@ -50,6 +56,10 @@
     /streetview/i,
     /photometa/i,
     /photodebug/i,
+    /maps\\.google/i,
+    /google.*maps/i,
+    /earth/i,
+    /staticmap/i,
   ];
 
   function isGeoUrl(url) {
@@ -64,7 +74,6 @@
       lat >= -90 && lat <= 90 &&
       lng >= -180 && lng <= 180 &&
       !(lat === 0 && lng === 0) &&
-      // Also filter out suspicious values
       Math.abs(lat) > 0.001 &&
       Math.abs(lng) > 0.001
     );
@@ -79,7 +88,7 @@
     }
     lastFoundCoords = { lat, lng };
 
-    console.log('[CoordX Pro] Found coords:', lat, lng, 'from', source);
+    console.log('[CoordX Pro] ✅ Found coords:', lat, lng, 'from', source);
     
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
       detail: { lat, lng, source }
@@ -108,7 +117,7 @@
 
       // Handle Google's )]}' prefix
       if (trimmed.startsWith(')]}')) {
-        const jsonPart = trimmed.substring(trimmed.indexOf('\n') + 1);
+        const jsonPart = trimmed.substring(trimmed.indexOf('\\n') + 1);
         try {
           parsed = JSON.parse(jsonPart);
         } catch (e) {
@@ -137,7 +146,6 @@
     } catch (e) {}
 
     // Strategy 3: Regex patterns in text
-    // Pattern: [[lat, lng], ...] or [lat, lng]
     const bracketPairs = text.match(/\\[\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*(-?\\d{1,3}\\.\\d{4,})\\s*\\]/g);
     if (bracketPairs) {
       for (const pair of bracketPairs) {
@@ -265,11 +273,11 @@
 
     const response = await originalFetch.apply(this, arguments);
 
-    // Process all responses (log for debugging) but only parse geo URLs
+    // Process all responses
     if (url) {
       const isGeo = isGeoUrl(url);
       if (isGeo) {
-        console.log('[CoordX Pro] Intercepted fetch:', url.substring(0, 100));
+        console.log('[CoordX Pro] 🔍 Intercepted geo fetch:', url.substring(0, 100));
         processResponse(url, response).catch(() => {});
       }
     }
@@ -294,7 +302,7 @@
       if (xhr.__coordx_url) {
         const isGeo = isGeoUrl(xhr.__coordx_url);
         if (isGeo) {
-          console.log('[CoordX Pro] Intercepted XHR:', xhr.__coordx_url.substring(0, 100));
+          console.log('[CoordX Pro] 🔍 Intercepted geo XHR:', xhr.__coordx_url.substring(0, 100));
           try {
             const coords = parseCoordinates(xhr.responseText, xhr.__coordx_url);
             if (coords) {
@@ -319,7 +327,7 @@
         if (typeof data === 'string') {
           const coords = parseCoordinates(data, url);
           if (coords) {
-            console.log('[CoordX Pro] Found coords via WebSocket');
+            console.log('[CoordX Pro] 🔍 Found coords via WebSocket');
             sendCoords(coords.lat, coords.lng, 'websocket');
           }
         }
@@ -330,26 +338,24 @@
   };
   window.WebSocket.prototype = OriginalWebSocket.prototype;
 
-  console.log('[CoordX Pro] All hooks installed (fetch, XHR, WebSocket)');
+  console.log('[CoordX Pro] ✅ All hooks installed (fetch, XHR, WebSocket)');
 })();
 `;
+
+    // CRITICAL: Must append to DOM first, then remove
+    (document.head || document.documentElement).appendChild(script);
     script.remove();
+    
+    console.log('[CoordX Pro] Page script injection complete');
   }
 
-  // Inject immediately if DOM is ready, otherwise wait
+  // Inject immediately - document_start runs before DOM is ready
   if (document.documentElement) {
     injectPageScript();
-  } else {
-    document.addEventListener('DOMContentLoaded', injectPageScript);
   }
 
-  // Also inject on document_start for early interception
-  const observer = new MutationObserver(() => {
-    if (document.documentElement && !document.querySelector('script[data-coordx]')) {
-      injectPageScript();
-    }
-  });
-  observer.observe(document, { childList: true, subtree: true });
+  // Also try on DOMContentLoaded as backup
+  document.addEventListener('DOMContentLoaded', injectPageScript);
 
   /**
    * Listen for coordinates from the page script
@@ -357,7 +363,7 @@
   window.addEventListener('__coordx_coords', (event) => {
     const { lat, lng, source } = event.detail;
 
-    console.log(`[CoordX Pro] Content script received coords:`, lat, lng, 'via', source);
+    console.log(`[CoordX Pro] 📍 Content script received coords:`, lat, lng, 'via', source);
 
     // Send to background script
     try {
