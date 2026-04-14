@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.0.9)
+ * CoordX Pro — Side Panel Script (v1.1.0)
  * 
  * Handles:
  * - Receiving coordinate updates from background worker
@@ -7,6 +7,7 @@
  * - Communicating with the map iframe
  * - Toggle and reset functionality
  * - Copy-to-clipboard for coordinates
+ * - Auto-detect new rounds in multiplayer
  */
 
 (function () {
@@ -39,7 +40,7 @@
   let currentCoords = null;
   let geocodeTimeout = null;
 
-  console.log('[CoordX Pro] Side panel v1.0.9 loaded');
+  console.log('[CoordX Pro] Side panel v1.1.0 loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 

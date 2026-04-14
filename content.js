@@ -1,6 +1,7 @@
 /**
- * CoordX Pro — Content Script (v1.0.9)
+ * CoordX Pro — Content Script (v1.1.0)
  *
+ * v1.1.0: Better new round detection for multiplayer
  * WorldGuessr uses an iframe for Street View with coords in the URL!
  * Format: https://www.google.com/maps/embed/v1/streetview?location=LAT,LNG&key=...
  */
@@ -11,7 +12,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.0.9 loaded on:', window.location.href);
+  console.log('[CoordX Pro] 🚀 Content script v1.1.0 loaded on:', window.location.href);
 
   function isValidCoord(lat, lng) {
     return (
@@ -24,20 +25,23 @@
     );
   }
 
-  let lastFoundCoords = null;
+  let lastSentCoords = null;
+  let currentIframeSrc = null;
 
   function sendCoords(lat, lng, source) {
-    // Avoid duplicates
-    if (lastFoundCoords && 
-        Math.abs(lastFoundCoords.lat - lat) < 0.0001 &&
-        Math.abs(lastFoundCoords.lng - lng) < 0.0001) {
+    // Always send if coords are different (new round)
+    const isDifferent = !lastSentCoords || 
+        Math.abs(lastSentCoords.lat - lat) > 0.0001 ||
+        Math.abs(lastSentCoords.lng - lng) > 0.0001;
+
+    if (!isDifferent) {
+      console.log('[CoordX Pro] Same coords, not sending');
       return;
     }
-    lastFoundCoords = { lat, lng };
 
-    console.log('[CoordX Pro] ✅✅✅ FOUND COORDINATES:', lat, lng, 'via', source);
-    
-    // Send via CustomEvent to content script listener
+    lastSentCoords = { lat, lng };
+    console.log('[CoordX Pro] ✅ SENDING COORDINATES:', lat, lng, 'via', source);
+
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
       detail: { lat, lng, source }
     }));
@@ -45,7 +49,6 @@
 
   /**
    * Extract coordinates from Street View iframe URL
-   * URL format: https://www.google.com/maps/embed/v1/streetview?location=LAT,LNG&key=...
    */
   function extractFromIframeSrc(src) {
     if (!src) return null;
@@ -60,17 +63,13 @@
       }
     }
 
-    // Also try panoid format sometimes used
-    // Format: ?panoid=... but location might still be there
-
     return null;
   }
 
   /**
-   * Find and monitor Street View iframe
+   * Find Street View iframe
    */
   function findStreetViewIframe() {
-    // Common iframe IDs and classes used by WorldGuessr and similar
     const selectors = [
       '#streetview',
       'iframe[src*="google.com/maps"]',
@@ -90,11 +89,17 @@
   }
 
   /**
-   * Check iframe for coordinates
+   * Check iframe for coordinates - ALWAYS check even if we found coords before
    */
   function checkIframe() {
     const iframe = findStreetViewIframe();
     if (iframe && iframe.src) {
+      // Log if iframe src changed
+      if (currentIframeSrc !== iframe.src) {
+        console.log('[CoordX Pro] 🔄 Iframe src CHANGED!');
+        currentIframeSrc = iframe.src;
+      }
+
       const coords = extractFromIframeSrc(iframe.src);
       if (coords) {
         sendCoords(coords.lat, coords.lng, 'iframe_url');
@@ -105,11 +110,24 @@
   }
 
   /**
-   * Monitor iframe for changes (new rounds)
+   * Watch for iframe changes more aggressively
    */
   function setupIframeObserver() {
-    const observer = new MutationObserver(() => {
-      checkIframe();
+    // MutationObserver for DOM changes
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        // Check for src attribute changes
+        if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
+          console.log('[CoordX Pro] Iframe src attribute changed');
+          checkIframe();
+          return;
+        }
+        // Check for new iframes added
+        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+          checkIframe();
+          return;
+        }
+      }
     });
 
     observer.observe(document.body, {
@@ -119,12 +137,14 @@
       attributeFilter: ['src']
     });
 
-    // Also check periodically (in case src changes without mutation)
-    setInterval(checkIframe, 1000);
+    // Check every 500ms for iframe URL changes (important for SPA navigation)
+    setInterval(checkIframe, 500);
+
+    console.log('[CoordX Pro] Iframe observer active');
   }
 
   /**
-   * Inject page script to hook fetch/XHR as backup
+   * Inject page script to hook fetch/XHR
    */
   function injectPageScript() {
     const script = document.createElement('script');
@@ -135,7 +155,7 @@
   if (window.__coordxPageInjected) return;
   window.__coordxPageInjected = true;
 
-  console.log('[CoordX Pro] Page script injected');
+  console.log('[CoordX Pro] Page script v1.1.0 injected');
 
   let lastFoundCoords = null;
 
@@ -148,13 +168,14 @@
   }
 
   function sendCoords(lat, lng, source) {
-    if (lastFoundCoords && 
-        Math.abs(lastFoundCoords.lat - lat) < 0.0001 &&
-        Math.abs(lastFoundCoords.lng - lng) < 0.0001) {
-      return;
-    }
-    lastFoundCoords = { lat, lng };
+    // Check if coords are significantly different (new round)
+    const isDifferent = !lastFoundCoords ||
+        Math.abs(lastFoundCoords.lat - lat) > 0.0001 ||
+        Math.abs(lastFoundCoords.lng - lng) > 0.0001;
 
+    if (!isDifferent) return;
+
+    lastFoundCoords = { lat, lng };
     console.log('[CoordX Pro] ✅ Found coords via', source, ':', lat, lng);
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
       detail: { lat, lng, source }
@@ -199,28 +220,21 @@
         }
         return null;
       };
-      const result = find(data);
-      if (result) return result;
+      return find(data);
     } catch {}
-
     return null;
   }
 
   // Hook fetch
   const _fetch = window.fetch;
   window.fetch = async function(input, init) {
-    const url = typeof input === 'string' ? input : input?.url || '';
     const response = await _fetch.apply(this, arguments);
-    
     try {
       const cloned = response.clone();
       const text = await cloned.text();
       const coords = parseCoords(text);
-      if (coords) {
-        sendCoords(coords.lat, coords.lng, 'fetch');
-      }
+      if (coords) sendCoords(coords.lat, coords.lng, 'fetch');
     } catch {}
-    
     return response;
   };
 
@@ -256,7 +270,7 @@
   // Listen for coordinates from page script
   window.addEventListener('__coordx_coords', (event) => {
     const { lat, lng, source } = event.detail;
-    console.log(`[CoordX Pro] 📍 Received coords:`, lat, lng, 'via', source);
+    console.log(`[CoordX Pro] 📍 Received coords from page:`, lat, lng, 'via', source);
 
     try {
       chrome.runtime.sendMessage({
@@ -268,17 +282,11 @@
     } catch {}
   });
 
-  // Wait for DOM to be ready, then setup iframe monitoring
+  // Initialize
   function init() {
-    console.log('[CoordX Pro] Setting up iframe monitoring...');
-    
-    // Check immediately
+    console.log('[CoordX Pro] Initializing...');
     checkIframe();
-    
-    // Setup observer for DOM changes
     setupIframeObserver();
-    
-    console.log('[CoordX Pro] ✅ Iframe monitoring active');
   }
 
   if (document.readyState === 'loading') {
@@ -287,8 +295,10 @@
     init();
   }
 
-  // Also check after a delay (for slow-loading iframes)
+  // Delayed checks for slow-loading iframes
+  setTimeout(init, 500);
   setTimeout(init, 1000);
+  setTimeout(init, 2000);
   setTimeout(init, 3000);
 
 })();
