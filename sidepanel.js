@@ -174,11 +174,16 @@
   async function reverseGeocode(lat, lng) {
     console.log('[CoordX Pro] 🌍 Starting reverse geocode for:', lat, lng);
     
+    // Show loading state
+    els.addrDisplayName.textContent = 'Loading address...';
+    els.addressSection.classList.add('active');
+    
     // Debounce rapid calls
     if (geocodeTimeout) clearTimeout(geocodeTimeout);
 
     geocodeTimeout = setTimeout(async () => {
       try {
+        // Try Nominatim OpenStreetMap (free, no API key needed)
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
         
         console.log('[CoordX Pro] Fetching:', url);
@@ -186,7 +191,7 @@
         const response = await fetch(url, {
           headers: { 
             'Accept-Language': 'en',
-            'User-Agent': 'CoordX-Pro/1.0'
+            'User-Agent': 'CoordX-Pro/1.0.6 (Chrome Extension)'
           }
         });
 
@@ -195,35 +200,55 @@
         }
 
         const data = await response.json();
-        console.log('[CoordX Pro] Geocode response:', data);
+        console.log('[CoordX Pro] Geocode response:', JSON.stringify(data, null, 2));
         
         if (data.error) {
           throw new Error(data.error);
         }
 
-        const address = parseAddress(data);
-        console.log('[CoordX Pro] Parsed address:', address);
+        // Check if we got meaningful address data
+        const address = data.address || {};
+        const hasAddressData = Object.keys(address).length > 0 || data.display_name;
         
-        updateAddressUI(address);
+        if (!hasAddressData) {
+          console.warn('[CoordX Pro] No address data in response');
+          throw new Error('No address data returned');
+        }
+
+        const parsedAddress = parseAddress(data);
+        console.log('[CoordX Pro] Parsed address:', parsedAddress);
+        
+        updateAddressUI(parsedAddress);
 
         // Persist address for panel reopen
-        await chrome.storage.local.set({ lastAddress: address });
+        await chrome.storage.local.set({ lastAddress: parsedAddress });
 
         geocodeRetryCount = 0;
 
       } catch (err) {
         console.error('[CoordX Pro] ❌ Reverse geocoding failed:', err.message);
         
+        // Show coordinates as fallback
+        const coordStr = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        
         if (geocodeRetryCount < MAX_GEOCODE_RETRIES) {
           geocodeRetryCount++;
           console.log(`[CoordX Pro] Retrying geocode (${geocodeRetryCount}/${MAX_GEOCODE_RETRIES})...`);
+          els.addrDisplayName.textContent = `Retrying... (${geocodeRetryCount}/${MAX_GEOCODE_RETRIES})`;
           setTimeout(() => reverseGeocode(lat, lng), 2000 * geocodeRetryCount);
         } else {
-          console.warn('[CoordX Pro] Max geocode retries reached');
-          // Show partial info
-          els.addrDisplayName.textContent = 'Address lookup failed';
-          els.addrCountry.textContent = 'Click "New Round" to retry';
-          els.addressSection.classList.add('active');
+          console.warn('[CoordX Pro] Max geocode retries reached, showing coordinates');
+          // Show coordinates as the address (fallback)
+          updateAddressUI({
+            displayName: coordStr,
+            neighborhood: 'Geocoding unavailable',
+            suburb: '—',
+            city: '—',
+            district: '—',
+            state: '—',
+            postcode: '—',
+            country: 'Check coordinates above'
+          });
         }
       }
     }, 300);

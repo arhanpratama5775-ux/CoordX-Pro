@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Advanced location tracker for GeoGuessr, OpenGuessr & WorldGuessr — bug-free side panel with auto-detect, interactive map & detailed address info.",
   "permissions": [
     "sidePanel",
