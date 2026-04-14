@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.1.1)
+ * CoordX Pro — Background Service Worker (v1.1.2)
  * 
  * SUPER AGGRESSIVE - Always accepts new coordinates
  * No more blocking on searching flag
