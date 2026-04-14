@@ -1,25 +1,19 @@
 /**
- * CoordX Pro — Content Script (v1.0.4)
+ * CoordX Pro — Content Script (v1.0.5)
  *
- * Injects a page script to intercept fetch/XHR/WebSocket responses at the page level.
- * This is necessary because Chrome MV3 service workers cannot access response bodies.
+ * More aggressive interception - logs ALL requests for debugging
+ * and tries multiple methods to find coordinates.
  */
 
 (function () {
   'use strict';
 
-  // Don't inject twice
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] Content script loaded on:', window.location.href);
+  console.log('[CoordX Pro] 🚀 Content script loaded on:', window.location.href);
 
-  /**
-   * Inject a script tag into the page to hook into fetch/XHR/WebSocket.
-   * MUST append to DOM first, then remove (the script will have executed).
-   */
   function injectPageScript() {
-    // Check if already injected
     if (window.__coordxPageInjected) return;
 
     const script = document.createElement('script');
@@ -27,46 +21,13 @@
 
     script.textContent = `
 (function() {
-  // Don't inject twice
   if (window.__coordxPageInjected) return;
   window.__coordxPageInjected = true;
 
-  console.log('[CoordX Pro] Page script injected successfully!');
+  console.log('[CoordX Pro] 🚀 Page script injected!');
 
-  // Track found coordinates to avoid duplicates
   let lastFoundCoords = null;
-
-  // Comprehensive patterns for GeoGuessr and similar games
-  const GEO_PATTERNS = [
-    /GeoPhotoService/i,
-    /streetviewpixels/i,
-    /cbk[0-9]*\\.google/i,
-    /geo[0-9]*\\.ggpht/i,
-    /lh[3-6]\\.ggpht/i,
-    /maps\\.googleapis\\.com.*streetview/i,
-    /maps\\.googleapis\\.com.*photo/i,
-    /maps\\.googleapis\\.com.*pano/i,
-    /googleusercontent\\.com.*streetview/i,
-    /google\\.com.*cbk/i,
-    /google\\.com.*geo/i,
-    /panorama/i,
-    /pano_id/i,
-    /svv/i,
-    /street_view/i,
-    /streetview/i,
-    /photometa/i,
-    /photodebug/i,
-    /maps\\.google/i,
-    /google.*maps/i,
-    /earth/i,
-    /staticmap/i,
-  ];
-
-  function isGeoUrl(url) {
-    if (!url) return false;
-    const urlStr = url.toString().toLowerCase();
-    return GEO_PATTERNS.some(pattern => pattern.test(urlStr));
-  }
+  let requestCount = 0;
 
   function isValidCoord(lat, lng) {
     return (
@@ -80,7 +41,6 @@
   }
 
   function sendCoords(lat, lng, source) {
-    // Avoid duplicates
     if (lastFoundCoords && 
         Math.abs(lastFoundCoords.lat - lat) < 0.0001 &&
         Math.abs(lastFoundCoords.lng - lng) < 0.0001) {
@@ -88,154 +48,91 @@
     }
     lastFoundCoords = { lat, lng };
 
-    console.log('[CoordX Pro] ✅ Found coords:', lat, lng, 'from', source);
+    console.log('[CoordX Pro] ✅✅✅ FOUND COORDINATES:', lat, lng, 'via', source);
     
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
       detail: { lat, lng, source }
     }));
   }
 
-  function parseCoordinates(data, url) {
-    if (!data) return null;
+  function extractCoordsFromText(text, source) {
+    if (!text || typeof text !== 'string') return null;
 
-    const text = typeof data === 'string' ? data : JSON.stringify(data);
+    // Log first 200 chars for debugging
+    console.log('[CoordX Pro] 📄 Analyzing response:', text.substring(0, 200));
 
-    // Strategy 1: Extract from URL parameters
-    try {
-      const urlObj = new URL(url, window.location.origin);
-      const lat = parseFloat(urlObj.searchParams.get('lat') || urlObj.searchParams.get('y'));
-      const lng = parseFloat(urlObj.searchParams.get('lng') || urlObj.searchParams.get('lon') || urlObj.searchParams.get('x'));
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'url_param' };
-      }
-    } catch (e) {}
-
-    // Strategy 2: Parse as JSON (various formats)
-    try {
-      let parsed;
-      const trimmed = text.trim();
-
-      // Handle Google's )]}' prefix
-      if (trimmed.startsWith(')]}')) {
-        const jsonPart = trimmed.substring(trimmed.indexOf('\\n') + 1);
-        try {
-          parsed = JSON.parse(jsonPart);
-        } catch (e) {
-          const arrayMatch = jsonPart.match(/\\[[\\s\\S]*\\]/);
-          if (arrayMatch) {
-            parsed = JSON.parse(arrayMatch[0]);
-          }
-        }
-      } else {
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {
-          const arrayMatch = trimmed.match(/\\[[\\s\\S]*\\]/);
-          if (arrayMatch) {
-            parsed = JSON.parse(arrayMatch[0]);
-          }
-        }
-      }
-
-      if (parsed) {
-        const result = findCoordsInData(parsed);
-        if (result) {
-          return { ...result, source: 'json_parse' };
-        }
-      }
-    } catch (e) {}
-
-    // Strategy 3: Regex patterns in text
-    const bracketPairs = text.match(/\\[\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*(-?\\d{1,3}\\.\\d{4,})\\s*\\]/g);
-    if (bracketPairs) {
-      for (const pair of bracketPairs) {
-        const nums = pair.match(/-?\\d+\\.\\d+/g);
+    // Pattern 1: [number, number] - array format
+    const arrays = text.match(/\\[\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*(-?\\d{1,3}\\.\\d{3,})\\s*\\]/g);
+    if (arrays) {
+      for (const arr of arrays) {
+        const nums = arr.match(/-?\\d+\\.\\d+/g);
         if (nums && nums.length >= 2) {
           const lat = parseFloat(nums[0]);
           const lng = parseFloat(nums[1]);
           if (isValidCoord(lat, lng)) {
-            return { lat, lng, source: 'bracket_regex' };
+            return { lat, lng };
           }
         }
       }
     }
 
-    // Pattern: "lat":number,"lng":number or similar
-    const latLngPattern = /["']?(?:lat|latitude|y)["']?\\s*[:=]\\s*(-?\\d{1,2}\\.\\d{4,})[^\\d]*["']?(?:lng|lon|longitude|x)["']?\\s*[:=]\\s*(-?\\d{1,3}\\.\\d{4,})/i;
-    let match = text.match(latLngPattern);
-    if (match) {
-      const lat = parseFloat(match[1]);
-      const lng = parseFloat(match[2]);
+    // Pattern 2: lat/lng keys
+    const latKeyMatch = text.match(/"(?:lat|latitude|y)"\\s*:\\s*(-?\\d{1,2}\\.\\d+)/i);
+    const lngKeyMatch = text.match(/"(?:lng|lon|longitude|x)"\\s*:\\s*(-?\\d{1,3}\\.\\d+)/i);
+    if (latKeyMatch && lngKeyMatch) {
+      const lat = parseFloat(latKeyMatch[1]);
+      const lng = parseFloat(lngKeyMatch[1]);
       if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'key_value' };
+        return { lat, lng };
       }
     }
 
-    // Pattern: Any two consecutive numbers that look like coordinates
-    const allNumPattern = /(-?\\d{1,2}\\.\\d{4,15})/g;
-    const allNums = [];
-    let numMatch;
-    while ((numMatch = allNumPattern.exec(text)) !== null) {
-      allNums.push(parseFloat(numMatch[1]));
-    }
-
-    // Look for coordinate-like pairs
-    for (let i = 0; i < allNums.length - 1; i++) {
-      const lat = allNums[i];
-      const lng = allNums[i + 1];
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'sequential_nums' };
+    // Pattern 3: Any pair of decimal numbers that look like coords
+    const allDecimals = text.match(/-?\\d{1,2}\\.\\d{4,15}/g);
+    if (allDecimals && allDecimals.length >= 2) {
+      for (let i = 0; i < allDecimals.length - 1; i++) {
+        const lat = parseFloat(allDecimals[i]);
+        const lng = parseFloat(allDecimals[i + 1]);
+        if (isValidCoord(lat, lng)) {
+          return { lat, lng };
+        }
       }
     }
 
     return null;
   }
 
-  function findCoordsInData(data, depth = 0) {
-    if (depth > 10 || !data) return null;
+  function findCoordsInObject(obj, depth = 0) {
+    if (depth > 15 || !obj) return null;
 
-    // Array handling
-    if (Array.isArray(data)) {
-      // Try [lat, lng] at positions 0,1
-      if (data.length >= 2 && typeof data[0] === 'number' && typeof data[1] === 'number') {
-        const lat = parseFloat(data[0]);
-        const lng = parseFloat(data[1]);
-        if (isValidCoord(lat, lng)) {
-          return { lat, lng };
-        }
+    if (Array.isArray(obj)) {
+      // Check [lat, lng] at start
+      if (obj.length >= 2 && typeof obj[0] === 'number' && typeof obj[1] === 'number') {
+        const lat = obj[0], lng = obj[1];
+        if (isValidCoord(lat, lng)) return { lat, lng };
       }
-
-      // Try [?, ?, lat, lng] at positions 2,3 (Google's format)
-      if (data.length >= 4 && typeof data[2] === 'number' && typeof data[3] === 'number') {
-        const lat = parseFloat(data[2]);
-        const lng = parseFloat(data[3]);
-        if (isValidCoord(lat, lng)) {
-          return { lat, lng };
-        }
+      // Check [?, ?, lat, lng] 
+      if (obj.length >= 4 && typeof obj[2] === 'number' && typeof obj[3] === 'number') {
+        const lat = obj[2], lng = obj[3];
+        if (isValidCoord(lat, lng)) return { lat, lng };
       }
-
-      // Try nested arrays
-      for (const item of data) {
-        if (Array.isArray(item) || (typeof item === 'object' && item !== null)) {
-          const result = findCoordsInData(item, depth + 1);
-          if (result) return result;
-        }
+      // Recurse
+      for (const item of obj) {
+        const result = findCoordsInObject(item, depth + 1);
+        if (result) return result;
       }
     }
 
-    // Object handling
-    if (typeof data === 'object' && data !== null) {
+    if (typeof obj === 'object' && obj !== null) {
       // Look for lat/lng keys
-      const lat = data.lat ?? data.latitude ?? data.y ?? data._lat;
-      const lng = data.lng ?? data.lon ?? data.longitude ?? data.x ?? data._lng;
-
+      const lat = obj.lat ?? obj.latitude ?? obj.y ?? obj._lat ?? obj.location?.lat;
+      const lng = obj.lng ?? obj.lon ?? obj.longitude ?? obj.x ?? obj.location?.lng;
       if (typeof lat === 'number' && typeof lng === 'number' && isValidCoord(lat, lng)) {
         return { lat, lng };
       }
-
-      // Check nested objects
-      for (const key of Object.keys(data)) {
-        const result = findCoordsInData(data[key], depth + 1);
+      // Recurse
+      for (const key of Object.keys(obj)) {
+        const result = findCoordsInObject(obj[key], depth + 1);
         if (result) return result;
       }
     }
@@ -243,143 +140,180 @@
     return null;
   }
 
-  async function processResponse(url, response) {
+  function parseAllFormats(data, url) {
+    // Try JSON parse
+    try {
+      let parsed;
+      const text = typeof data === 'string' ? data.trim() : '';
+      
+      // Handle Google's )]}' prefix
+      if (text.startsWith(')]}')) {
+        const jsonPart = text.substring(text.indexOf('\\n') + 1);
+        try { parsed = JSON.parse(jsonPart); } catch {}
+      } else if (text.startsWith('[') || text.startsWith('{')) {
+        try { parsed = JSON.parse(text); } catch {}
+      }
+
+      if (parsed) {
+        const result = findCoordsInObject(parsed);
+        if (result) return result;
+      }
+    } catch {}
+
+    // Try regex
+    const textResult = extractCoordsFromText(typeof data === 'string' ? data : JSON.stringify(data));
+    if (textResult) return textResult;
+
+    return null;
+  }
+
+  async function processRequest(url, response) {
+    requestCount++;
+    
+    // Log ALL requests for debugging (first 80 chars)
+    console.log('[CoordX Pro] #' + requestCount + ' 🌐', url.substring(0, 80));
+
     try {
       const cloned = response.clone();
       const text = await cloned.text();
 
-      if (text && text.length > 0) {
-        const coords = parseCoordinates(text, url);
-        if (coords) {
-          sendCoords(coords.lat, coords.lng, coords.source);
-        }
+      if (!text) return;
+
+      const coords = parseAllFormats(text, url);
+      if (coords) {
+        sendCoords(coords.lat, coords.lng, 'fetch:' + url.substring(0, 50));
       }
-    } catch (e) {
-      // Ignore errors
-    }
+    } catch (e) {}
   }
 
   /* ─── Hook Fetch ─────────────────────────────────────── */
-  const originalFetch = window.fetch;
+  const _fetch = window.fetch;
   window.fetch = async function(input, init) {
-    let url = null;
-    if (typeof input === 'string') {
-      url = input;
-    } else if (input instanceof Request) {
-      url = input.url;
-    } else if (input?.url) {
-      url = input.url;
-    }
-
-    const response = await originalFetch.apply(this, arguments);
-
-    // Process all responses
-    if (url) {
-      const isGeo = isGeoUrl(url);
-      if (isGeo) {
-        console.log('[CoordX Pro] 🔍 Intercepted geo fetch:', url.substring(0, 100));
-        processResponse(url, response).catch(() => {});
-      }
-    }
-
+    const url = typeof input === 'string' ? input : input?.url || '';
+    const response = await _fetch.apply(this, arguments);
+    processRequest(url, response).catch(() => {});
     return response;
   };
 
   /* ─── Hook XMLHttpRequest ─────────────────────────────── */
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
+  const _open = XMLHttpRequest.prototype.open;
+  const _send = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function(method, url) {
-    this.__coordx_url = url;
-    this.__coordx_method = method;
-    return originalXHROpen.apply(this, arguments);
+    this._url = url;
+    return _open.apply(this, arguments);
   };
 
   XMLHttpRequest.prototype.send = function() {
     const xhr = this;
-
     xhr.addEventListener('load', function() {
-      if (xhr.__coordx_url) {
-        const isGeo = isGeoUrl(xhr.__coordx_url);
-        if (isGeo) {
-          console.log('[CoordX Pro] 🔍 Intercepted geo XHR:', xhr.__coordx_url.substring(0, 100));
-          try {
-            const coords = parseCoordinates(xhr.responseText, xhr.__coordx_url);
-            if (coords) {
-              sendCoords(coords.lat, coords.lng, coords.source);
-            }
-          } catch (e) {}
+      requestCount++;
+      console.log('[CoordX Pro] #' + requestCount + ' 🌐 XHR:', (xhr._url || '').substring(0, 80));
+      
+      if (xhr.responseText) {
+        const coords = parseAllFormats(xhr.responseText, xhr._url);
+        if (coords) {
+          sendCoords(coords.lat, coords.lng, 'xhr');
         }
       }
     });
-
-    return originalXHRSend.apply(this, arguments);
+    return _send.apply(this, arguments);
   };
 
-  /* ─── Hook WebSocket for real-time data ───────────────── */
-  const OriginalWebSocket = window.WebSocket;
+  /* ─── Hook WebSocket ───────────────────────────────────── */
+  const _WS = window.WebSocket;
   window.WebSocket = function(url, protocols) {
-    const ws = new OriginalWebSocket(url, protocols);
-
-    ws.addEventListener('message', function(event) {
-      try {
-        let data = event.data;
-        if (typeof data === 'string') {
-          const coords = parseCoordinates(data, url);
-          if (coords) {
-            console.log('[CoordX Pro] 🔍 Found coords via WebSocket');
-            sendCoords(coords.lat, coords.lng, 'websocket');
-          }
+    const ws = new _WS(url, protocols);
+    ws.addEventListener('message', function(e) {
+      if (typeof e.data === 'string' && e.data.length > 10) {
+        requestCount++;
+        console.log('[CoordX Pro] #' + requestCount + ' 🌐 WS message:', e.data.substring(0, 80));
+        const coords = parseAllFormats(e.data, url);
+        if (coords) {
+          sendCoords(coords.lat, coords.lng, 'websocket');
         }
-      } catch (e) {}
+      }
     });
-
     return ws;
   };
-  window.WebSocket.prototype = OriginalWebSocket.prototype;
+  window.WebSocket.prototype = _WS.prototype;
 
-  console.log('[CoordX Pro] ✅ All hooks installed (fetch, XHR, WebSocket)');
+  /* ─── Try to access Google Maps/Street View directly ─── */
+  function tryExtractFromWindow() {
+    // Try various possible locations for Street View data
+    const checks = [
+      () => window.google?.maps?.StreetViewPanorama?.getLocation?.()?.latLng?.lat && 
+            window.google?.maps?.StreetViewPanorama?.getLocation?.()?.latLng?.lng,
+      () => window.panorama?.getPosition?.()?.lat?.() && window.panorama?.getPosition?.()?.lng?.(),
+      () => window.sv?.getLocation?.()?.latLng?.lat && window.sv?.getLocation?.()?.latLng?.lng,
+      () => window.streetView?.getLocation?.()?.latLng,
+      () => window.__INITIAL_STATE__?.location,
+      () => window.__NEXT_DATA__?.props?.pageProps?.location,
+      () => window.gameState?.location,
+      () => window.__GAME_STATE__?.location,
+    ];
+
+    for (const check of checks) {
+      try {
+        const result = check();
+        if (result) {
+          let lat, lng;
+          if (typeof result.lat === 'function') {
+            lat = result.lat();
+            lng = result.lng();
+          } else if (result.lat !== undefined) {
+            lat = result.lat;
+            lng = result.lng;
+          } else if (typeof result === 'object') {
+            lat = result.latitude || result.lat;
+            lng = result.longitude || result.lng;
+          }
+          if (isValidCoord(lat, lng)) {
+            return { lat, lng };
+          }
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  // Poll for window data every 2 seconds
+  setInterval(() => {
+    const coords = tryExtractFromWindow();
+    if (coords) {
+      sendCoords(coords.lat, coords.lng, 'window_object');
+    }
+  }, 2000);
+
+  console.log('[CoordX Pro] ✅ All hooks installed - watching ALL requests');
+  console.log('[CoordX Pro] 💡 Start a game and check console for intercepted requests');
 })();
 `;
 
-    // CRITICAL: Must append to DOM first, then remove
     (document.head || document.documentElement).appendChild(script);
     script.remove();
-    
-    console.log('[CoordX Pro] Page script injection complete');
+    console.log('[CoordX Pro] Page script injected');
   }
 
-  // Inject immediately - document_start runs before DOM is ready
+  // Inject immediately
   if (document.documentElement) {
     injectPageScript();
   }
-
-  // Also try on DOMContentLoaded as backup
   document.addEventListener('DOMContentLoaded', injectPageScript);
 
-  /**
-   * Listen for coordinates from the page script
-   */
+  // Listen for coords
   window.addEventListener('__coordx_coords', (event) => {
     const { lat, lng, source } = event.detail;
+    console.log(`[CoordX Pro] 📍 Content script received:`, lat, lng, 'via', source);
 
-    console.log(`[CoordX Pro] 📍 Content script received coords:`, lat, lng, 'via', source);
-
-    // Send to background script
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
         lat,
         lng,
         source
-      }).then(response => {
-        console.log('[CoordX Pro] Background response:', response);
-      }).catch(err => {
-        console.warn('[CoordX Pro] Could not send to background:', err.message);
-      });
-    } catch (e) {
-      console.error('[CoordX Pro] sendMessage failed:', e);
-    }
+      }).catch(() => {});
+    } catch {}
   });
 
 })();
