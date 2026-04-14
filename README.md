@@ -58,10 +58,8 @@
 - Initial release
 - Basic coordinate detection for WorldGuessr
 
-## 📄 License
-
-MIT License — use freely!
+## Download
 
 ---
 
-Made with ❤️ for geography game enthusiasts
+https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
