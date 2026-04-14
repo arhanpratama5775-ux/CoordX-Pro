@@ -97,4 +97,5 @@ CoordX-Pro/
 5. Coordinates are sent to the background script and stored
 6. Side panel displays the coordinates, reverse-geocoded address, and map location
 
-## Download https://github.com/arhanpratama5775-ux/CoordX-Proarchive/refs/heads/main.zip
+## Download 
+https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
