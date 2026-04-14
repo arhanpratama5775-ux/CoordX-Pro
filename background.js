@@ -316,6 +316,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true; // Async response
 
+    case 'contentCoords':
+      // Coordinates received from content script (page-level interception)
+      if (!trackingEnabled || !searching) {
+        sendResponse({ success: false, reason: 'Not tracking' });
+        return;
+      }
+
+      const { lat, lng, source } = message;
+
+      // Validate coordinates
+      if (!isValidCoord(lat, lng)) {
+        console.warn('[CoordX Pro] Invalid coords from content script:', lat, lng);
+        sendResponse({ success: false, reason: 'Invalid coords' });
+        return;
+      }
+
+      // Skip if same as last coords (avoid duplicates)
+      if (lastCoords && lastCoords.lat === lat && lastCoords.lng === lng) {
+        console.log('[CoordX Pro] Duplicate coords, skipping');
+        sendResponse({ success: true, duplicate: true });
+        return;
+      }
+
+      console.log(`[CoordX Pro] Coords from content script (${source}):`, lat, lng);
+
+      searching = false;
+      lastCoords = { lat, lng };
+
+      // Store in chrome.storage for persistence
+      chrome.storage.local.set({ lastCoords: { lat, lng } });
+
+      // Notify all extension pages
+      chrome.runtime.sendMessage({
+        type: 'coordFound',
+        lat,
+        lng,
+        source
+      }).catch(() => {});
+
+      sendResponse({ success: true });
+      break;
+
     default:
       break;
   }

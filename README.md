@@ -4,13 +4,22 @@ Advanced location tracker Chrome extension for **GeoGuessr**, **OpenGuessr**, an
 
 ## Features
 
-- **Automatic Coordinate Detection** — Intercepts GeoPhotoService network requests to extract real GPS coordinates
+- **Automatic Coordinate Detection** — Intercepts network requests at page level to extract real GPS coordinates
 - **Interactive Map** — Leaflet-powered dark-themed map with smooth fly-to animations
 - **Detailed Address Breakdown** — Reverse geocoding via Nominatim with full address details
 - **Persistent Side Panel** — State survives panel close/reopen and tab switching (the key bug fix!)
 - **Quick Toggle** — Enable/disable tracking from the side panel or extension popup
 - **Copy Coordinates** — One-click copy lat/lng to clipboard
 - **Dark Theme** — Discord-inspired glassmorphism UI
+
+## v1.0.2 Update - Critical Fix
+
+This version fixes the core issue where coordinates were not being detected:
+
+- **Content Script Injection** — Now injects a page script to intercept fetch/XHR at the page level
+- **Response Body Access** — Can now read actual response bodies (service workers cannot do this directly)
+- **Multiple Parse Strategies** — Improved coordinate parsing with multiple fallback strategies
+- **Broader URL Detection** — Enhanced pattern matching for GeoPhotoService and related APIs
 
 ## Supported Platforms
 
@@ -39,6 +48,7 @@ Advanced location tracker Chrome extension for **GeoGuessr**, **OpenGuessr**, an
 
 | Issue | Original | CoordX Pro |
 |-------|----------|------------|
+| Coordinates not detected | Service worker can't read response body | Content script hooks fetch/XHR at page level |
 | Side panel disappears on tab switch | No fix — panel stays closed | Auto-enables panel on supported sites + state persists in `chrome.storage` |
 | Duplicate `onMessage` listeners | Two listeners in background.js | Single consolidated listener |
 | Overly broad permissions | `<all_urls>` host permission | Restricted to specific game domains + Google API domains |
@@ -53,6 +63,7 @@ Advanced location tracker Chrome extension for **GeoGuessr**, **OpenGuessr**, an
 CoordX-Pro/
 ├── manifest.json        — Extension manifest (MV3)
 ├── background.js        — Service worker: request interception + side panel management
+├── content.js           — Content script: hooks fetch/XHR to read response bodies
 ├── sidepanel.html       — Side panel UI
 ├── sidepanel.js         — Side panel logic
 ├── style.css            — Dark theme styles
@@ -72,9 +83,19 @@ CoordX-Pro/
 - **Manifest V3** — Modern Chrome extension API
 - **Side Panel API** — with `setPanelBehavior({ openPanelOnActionClick: true })` for reliability
 - **Storage API** — `chrome.storage.local` for state persistence across panel lifecycles
-- **Web Request API** — `chrome.webRequest.onCompleted` for intercepting GeoPhotoService responses
+- **Content Script Injection** — Page-level fetch/XHR interception to read response bodies
+- **Web Request API** — `chrome.webRequest.onCompleted` for additional request detection
 - **Leaflet + CARTO Dark Tiles** — Beautiful dark-themed map
 - **Nominatim Reverse Geocoding** — Free, no API key required
+
+## How It Works
+
+1. Content script is injected into supported game pages
+2. A page script is injected to hook `window.fetch` and `XMLHttpRequest`
+3. When a GeoPhotoService or Street View API request is made, the response is captured
+4. Coordinates are parsed from the response using multiple strategies
+5. Coordinates are sent to the background script and stored
+6. Side panel displays the coordinates, reverse-geocoded address, and map location
 
 ## License
 
