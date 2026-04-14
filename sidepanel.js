@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script
+ * CoordX Pro — Side Panel Script (v1.0.6)
  * 
  * Handles:
  * - Receiving coordinate updates from background worker
@@ -7,13 +7,6 @@
  * - Communicating with the map iframe
  * - Toggle and reset functionality
  * - Copy-to-clipboard for coordinates
- * - Restoring last known state on panel reopen (fixes the disappearing bug)
- * 
- * Bug fixes in v1.0.1:
- * - Map now updates on side panel reopen (was missing postToMap call in init)
- * - Reverse geocoding has retry limit (was infinite loop)
- * - Duplicate coordinate updates prevented (onMessage + onChanged both firing)
- * - Map iframe load race condition handled properly
  */
 
 (function () {
@@ -46,23 +39,15 @@
   let currentCoords = null;
   let geocodeTimeout = null;
   let geocodeRetryCount = 0;
-  const MAX_GEOCODE_RETRIES = 2;
+  const MAX_GEOCODE_RETRIES = 3;
 
-  // Flag to prevent duplicate processing from onMessage + onChanged
-  let processingCoords = false;
+  console.log('[CoordX Pro] Side panel loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
-  /**
-   * On panel open, restore last known coordinates from storage.
-   * This is THE key fix for the "side panel disappearing" issue —
-   * when the panel reopens, it reads the persisted state instead of
-   * showing blank data.
-   * 
-   * v1.0.1 FIX: Also sends coordinates to map iframe on restore.
-   */
   async function init() {
-    // Restore tracking toggle state
+    console.log('[CoordX Pro] Initializing side panel...');
+    
     const storage = await chrome.storage.local.get(['trackingEnabled', 'lastCoords', 'lastAddress']);
 
     if (storage.trackingEnabled !== undefined) {
@@ -71,27 +56,33 @@
 
     // Restore last coordinates if available
     if (storage.lastCoords) {
+      console.log('[CoordX Pro] Restoring coords from storage:', storage.lastCoords);
       currentCoords = storage.lastCoords;
       updateCoordinates(storage.lastCoords.lat, storage.lastCoords.lng);
       els.statusText.textContent = 'Location found!';
       els.statusText.classList.add('found');
-
-      // BUG FIX: Also update the map iframe on restore!
       postToMap(storage.lastCoords.lat, storage.lastCoords.lng);
-    }
 
-    // Restore address if available
-    if (storage.lastAddress) {
-      updateAddressUI(storage.lastAddress);
+      // If no address in storage, fetch it
+      if (!storage.lastAddress) {
+        console.log('[CoordX Pro] No address in storage, fetching...');
+        reverseGeocode(storage.lastCoords.lat, storage.lastCoords.lng);
+      } else {
+        console.log('[CoordX Pro] Restoring address from storage');
+        updateAddressUI(storage.lastAddress);
+      }
     }
 
     // Request current status from background
     try {
       const status = await chrome.runtime.sendMessage({ type: 'getStatus' });
+      console.log('[CoordX Pro] Background status:', status);
+      
       if (status.lastCoords && !currentCoords) {
         currentCoords = status.lastCoords;
         updateCoordinates(status.lastCoords.lat, status.lastCoords.lng);
         postToMap(status.lastCoords.lat, status.lastCoords.lng);
+        reverseGeocode(status.lastCoords.lat, status.lastCoords.lng);
         els.statusText.textContent = 'Location found!';
         els.statusText.classList.add('found');
       }
@@ -100,31 +91,26 @@
         els.statusText.classList.remove('found');
       }
     } catch (e) {
-      // Background worker might not be ready yet
       console.warn('[CoordX Pro] Could not get status:', e.message);
     }
   }
 
   init();
 
-  /* ─── Coordinate Update Handler (deduplicated) ──────── */
+  /* ─── Coordinate Update Handler ─────────────────────── */
 
-  /**
-   * Single entry point for handling new coordinates.
-   * Prevents duplicate processing from onMessage + onChanged.
-   */
   function handleNewCoords(lat, lng, source) {
     // Skip if we already have these exact coordinates
     if (currentCoords && 
-        currentCoords.lat === lat && 
-        currentCoords.lng === lng) {
+        Math.abs(currentCoords.lat - lat) < 0.0001 && 
+        Math.abs(currentCoords.lng - lng) < 0.0001) {
       console.log(`[CoordX Pro] Duplicate coord update from ${source}, skipping`);
       return;
     }
 
-    console.log(`[CoordX Pro] New coords from ${source}:`, lat, lng);
+    console.log(`[CoordX Pro] ✅ New coords from ${source}:`, lat, lng);
     currentCoords = { lat, lng };
-    geocodeRetryCount = 0; // Reset geocode retry counter on new coords
+    geocodeRetryCount = 0;
 
     updateCoordinates(lat, lng);
     postToMap(lat, lng);
@@ -139,23 +125,16 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'coordFound') {
-      handleNewCoords(message.lat, message.lng, 'onMessage');
+      handleNewCoords(message.lat, message.lng, 'message');
     }
   });
 
-  /**
-   * Also listen for storage changes — this ensures we catch updates
-   * even if the message was sent while the panel was closed.
-   * 
-   * BUG FIX: Use handleNewCoords() which deduplicates against currentCoords,
-   * so we don't double-process if onMessage already handled it.
-   */
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
 
     if (changes.lastCoords && changes.lastCoords.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      handleNewCoords(lat, lng, 'onChanged');
+      handleNewCoords(lat, lng, 'storage');
     }
   });
 
@@ -169,11 +148,6 @@
 
   /* ─── Map Communication ─────────────────────────────── */
 
-  /**
-   * Send coordinates to the map iframe.
-   * BUG FIX: Handles race condition where iframe isn't loaded yet.
-   * Uses a proper load listener instead of just checking contentWindow.
-   */
   function postToMap(lat, lng) {
     const mapFrame = els.mapFrame;
     
@@ -184,65 +158,71 @@
           lat,
           lng
         }, '*');
+        console.log('[CoordX Pro] Sent coords to map');
       }
     };
 
-    // If iframe is already loaded, send immediately
     if (mapFrame.contentDocument && mapFrame.contentDocument.readyState === 'complete') {
       sendMsg();
     } else {
-      // Wait for iframe to load
       mapFrame.addEventListener('load', sendMsg, { once: true });
     }
   }
 
   /* ─── Reverse Geocoding ─────────────────────────────── */
 
-  /**
-   * Reverse geocode coordinates via Nominatim API.
-   * BUG FIX: Has max retry limit to prevent infinite loop.
-   * Retries up to MAX_GEOCODE_RETRIES times on failure.
-   */
   async function reverseGeocode(lat, lng) {
+    console.log('[CoordX Pro] 🌍 Starting reverse geocode for:', lat, lng);
+    
     // Debounce rapid calls
     if (geocodeTimeout) clearTimeout(geocodeTimeout);
 
     geocodeTimeout = setTimeout(async () => {
       try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+        
+        console.log('[CoordX Pro] Fetching:', url);
+        
         const response = await fetch(url, {
-          headers: { 'Accept-Language': 'en' }
+          headers: { 
+            'Accept-Language': 'en',
+            'User-Agent': 'CoordX-Pro/1.0'
+          }
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
 
         const data = await response.json();
+        console.log('[CoordX Pro] Geocode response:', data);
         
         if (data.error) {
           throw new Error(data.error);
         }
 
         const address = parseAddress(data);
+        console.log('[CoordX Pro] Parsed address:', address);
+        
         updateAddressUI(address);
 
         // Persist address for panel reopen
         await chrome.storage.local.set({ lastAddress: address });
 
-        // Reset retry counter on success
         geocodeRetryCount = 0;
 
       } catch (err) {
-        console.error('[CoordX Pro] Reverse geocoding failed:', err.message);
+        console.error('[CoordX Pro] ❌ Reverse geocoding failed:', err.message);
         
-        // BUG FIX: Only retry up to MAX_GEOCODE_RETRIES times
         if (geocodeRetryCount < MAX_GEOCODE_RETRIES) {
           geocodeRetryCount++;
-          console.log(`[CoordX Pro] Geocode retry ${geocodeRetryCount}/${MAX_GEOCODE_RETRIES}`);
+          console.log(`[CoordX Pro] Retrying geocode (${geocodeRetryCount}/${MAX_GEOCODE_RETRIES})...`);
           setTimeout(() => reverseGeocode(lat, lng), 2000 * geocodeRetryCount);
         } else {
-          console.warn('[CoordX Pro] Max geocode retries reached, giving up');
-          // Show error in UI
-          els.addrDisplayName.textContent = 'Address not available';
+          console.warn('[CoordX Pro] Max geocode retries reached');
+          // Show partial info
+          els.addrDisplayName.textContent = 'Address lookup failed';
+          els.addrCountry.textContent = 'Click "New Round" to retry';
           els.addressSection.classList.add('active');
         }
       }
@@ -251,19 +231,22 @@
 
   function parseAddress(data) {
     const addr = data.address || {};
+    
     return {
       displayName: data.display_name || '—',
-      neighborhood: addr.neighbourhood || addr.hamlet || '—',
-      suburb: addr.suburb || addr.village || addr.town || '—',
-      city: addr.city || addr.town || addr.municipality || '—',
-      district: addr.state_district || addr.county || '—',
-      state: addr.state || addr.region || '—',
-      postcode: addr.postcode || '—',
+      neighborhood: addr.neighbourhood || addr.hamlet || addr.residential || '—',
+      suburb: addr.suburb || addr.village || addr.town || addr.quarter || '—',
+      city: addr.city || addr.town || addr.municipality || addr.county || '—',
+      district: addr.state_district || addr.county || addr.region || '—',
+      state: addr.state || addr.region || addr.province || '—',
+      postcode: addr.postcode || addr.zip || '—',
       country: addr.country || '—'
     };
   }
 
   function updateAddressUI(address) {
+    console.log('[CoordX Pro] Updating address UI');
+    
     els.addrDisplayName.textContent = address.displayName;
     els.addrNeighborhood.textContent = address.neighborhood;
     els.addrSuburb.textContent = address.suburb;
@@ -275,7 +258,7 @@
     els.addressSection.classList.add('active');
 
     // Truncate long display names
-    if (address.displayName.length > 80) {
+    if (address.displayName && address.displayName.length > 80) {
       els.addrDisplayName.textContent = address.displayName.substring(0, 77) + '...';
       els.addrDisplayName.title = address.displayName;
     }
@@ -351,7 +334,7 @@
       }, 1500);
     }).catch(err => {
       console.error('[CoordX Pro] Copy failed:', err.message);
-      // Fallback: use execCommand
+      // Fallback
       const textarea = document.createElement('textarea');
       textarea.value = text;
       textarea.style.position = 'fixed';
