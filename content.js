@@ -1,8 +1,8 @@
 /**
- * CoordX Pro — Content Script (v1.0.5)
+ * CoordX Pro — Content Script (v1.0.6)
  *
- * More aggressive interception - logs ALL requests for debugging
- * and tries multiple methods to find coordinates.
+ * WorldGuessr uses an iframe for Street View with coords in the URL!
+ * Format: https://www.google.com/maps/embed/v1/streetview?location=LAT,LNG&key=...
  */
 
 (function () {
@@ -11,23 +11,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script loaded on:', window.location.href);
-
-  function injectPageScript() {
-    if (window.__coordxPageInjected) return;
-
-    const script = document.createElement('script');
-    script.id = 'coordx-page-script';
-
-    script.textContent = `
-(function() {
-  if (window.__coordxPageInjected) return;
-  window.__coordxPageInjected = true;
-
-  console.log('[CoordX Pro] 🚀 Page script injected!');
-
-  let lastFoundCoords = null;
-  let requestCount = 0;
+  console.log('[CoordX Pro] 🚀 Content script v1.0.6 loaded on:', window.location.href);
 
   function isValidCoord(lat, lng) {
     return (
@@ -40,7 +24,10 @@
     );
   }
 
+  let lastFoundCoords = null;
+
   function sendCoords(lat, lng, source) {
+    // Avoid duplicates
     if (lastFoundCoords && 
         Math.abs(lastFoundCoords.lat - lat) < 0.0001 &&
         Math.abs(lastFoundCoords.lng - lng) < 0.0001) {
@@ -50,261 +37,226 @@
 
     console.log('[CoordX Pro] ✅✅✅ FOUND COORDINATES:', lat, lng, 'via', source);
     
+    // Send via CustomEvent to content script listener
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
       detail: { lat, lng, source }
     }));
   }
 
-  function extractCoordsFromText(text, source) {
-    if (!text || typeof text !== 'string') return null;
+  /**
+   * Extract coordinates from Street View iframe URL
+   * URL format: https://www.google.com/maps/embed/v1/streetview?location=LAT,LNG&key=...
+   */
+  function extractFromIframeSrc(src) {
+    if (!src) return null;
 
-    // Log first 200 chars for debugging
-    console.log('[CoordX Pro] 📄 Analyzing response:', text.substring(0, 200));
-
-    // Pattern 1: [number, number] - array format
-    const arrays = text.match(/\\[\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*(-?\\d{1,3}\\.\\d{3,})\\s*\\]/g);
-    if (arrays) {
-      for (const arr of arrays) {
-        const nums = arr.match(/-?\\d+\\.\\d+/g);
-        if (nums && nums.length >= 2) {
-          const lat = parseFloat(nums[0]);
-          const lng = parseFloat(nums[1]);
-          if (isValidCoord(lat, lng)) {
-            return { lat, lng };
-          }
-        }
-      }
-    }
-
-    // Pattern 2: lat/lng keys
-    const latKeyMatch = text.match(/"(?:lat|latitude|y)"\\s*:\\s*(-?\\d{1,2}\\.\\d+)/i);
-    const lngKeyMatch = text.match(/"(?:lng|lon|longitude|x)"\\s*:\\s*(-?\\d{1,3}\\.\\d+)/i);
-    if (latKeyMatch && lngKeyMatch) {
-      const lat = parseFloat(latKeyMatch[1]);
-      const lng = parseFloat(lngKeyMatch[1]);
+    // Match location parameter in Google Maps embed URL
+    const locationMatch = src.match(/location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (locationMatch) {
+      const lat = parseFloat(locationMatch[1]);
+      const lng = parseFloat(locationMatch[2]);
       if (isValidCoord(lat, lng)) {
         return { lat, lng };
       }
     }
 
-    // Pattern 3: Any pair of decimal numbers that look like coords
-    const allDecimals = text.match(/-?\\d{1,2}\\.\\d{4,15}/g);
-    if (allDecimals && allDecimals.length >= 2) {
-      for (let i = 0; i < allDecimals.length - 1; i++) {
-        const lat = parseFloat(allDecimals[i]);
-        const lng = parseFloat(allDecimals[i + 1]);
-        if (isValidCoord(lat, lng)) {
-          return { lat, lng };
-        }
-      }
-    }
+    // Also try panoid format sometimes used
+    // Format: ?panoid=... but location might still be there
 
     return null;
   }
 
-  function findCoordsInObject(obj, depth = 0) {
-    if (depth > 15 || !obj) return null;
+  /**
+   * Find and monitor Street View iframe
+   */
+  function findStreetViewIframe() {
+    // Common iframe IDs and classes used by WorldGuessr and similar
+    const selectors = [
+      '#streetview',
+      'iframe[src*="google.com/maps"]',
+      'iframe[src*="streetview"]',
+      'iframe[src*="maps.googleapis.com"]',
+      '.streetview iframe',
+      'iframe[allow*="streetview"]'
+    ];
 
-    if (Array.isArray(obj)) {
-      // Check [lat, lng] at start
-      if (obj.length >= 2 && typeof obj[0] === 'number' && typeof obj[1] === 'number') {
-        const lat = obj[0], lng = obj[1];
-        if (isValidCoord(lat, lng)) return { lat, lng };
-      }
-      // Check [?, ?, lat, lng] 
-      if (obj.length >= 4 && typeof obj[2] === 'number' && typeof obj[3] === 'number') {
-        const lat = obj[2], lng = obj[3];
-        if (isValidCoord(lat, lng)) return { lat, lng };
-      }
-      // Recurse
-      for (const item of obj) {
-        const result = findCoordsInObject(item, depth + 1);
-        if (result) return result;
+    for (const selector of selectors) {
+      const iframe = document.querySelector(selector);
+      if (iframe) {
+        return iframe;
       }
     }
-
-    if (typeof obj === 'object' && obj !== null) {
-      // Look for lat/lng keys
-      const lat = obj.lat ?? obj.latitude ?? obj.y ?? obj._lat ?? obj.location?.lat;
-      const lng = obj.lng ?? obj.lon ?? obj.longitude ?? obj.x ?? obj.location?.lng;
-      if (typeof lat === 'number' && typeof lng === 'number' && isValidCoord(lat, lng)) {
-        return { lat, lng };
-      }
-      // Recurse
-      for (const key of Object.keys(obj)) {
-        const result = findCoordsInObject(obj[key], depth + 1);
-        if (result) return result;
-      }
-    }
-
     return null;
   }
 
-  function parseAllFormats(data, url) {
+  /**
+   * Check iframe for coordinates
+   */
+  function checkIframe() {
+    const iframe = findStreetViewIframe();
+    if (iframe && iframe.src) {
+      const coords = extractFromIframeSrc(iframe.src);
+      if (coords) {
+        sendCoords(coords.lat, coords.lng, 'iframe_url');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Monitor iframe for changes (new rounds)
+   */
+  function setupIframeObserver() {
+    const observer = new MutationObserver(() => {
+      checkIframe();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src']
+    });
+
+    // Also check periodically (in case src changes without mutation)
+    setInterval(checkIframe, 1000);
+  }
+
+  /**
+   * Inject page script to hook fetch/XHR as backup
+   */
+  function injectPageScript() {
+    const script = document.createElement('script');
+    script.id = 'coordx-page-script';
+
+    script.textContent = `
+(function() {
+  if (window.__coordxPageInjected) return;
+  window.__coordxPageInjected = true;
+
+  console.log('[CoordX Pro] Page script injected');
+
+  let lastFoundCoords = null;
+
+  function isValidCoord(lat, lng) {
+    return !isNaN(lat) && !isNaN(lng) &&
+      lat >= -90 && lat <= 90 &&
+      lng >= -180 && lng <= 180 &&
+      !(lat === 0 && lng === 0) &&
+      Math.abs(lat) > 0.001 && Math.abs(lng) > 0.001;
+  }
+
+  function sendCoords(lat, lng, source) {
+    if (lastFoundCoords && 
+        Math.abs(lastFoundCoords.lat - lat) < 0.0001 &&
+        Math.abs(lastFoundCoords.lng - lng) < 0.0001) {
+      return;
+    }
+    lastFoundCoords = { lat, lng };
+
+    console.log('[CoordX Pro] ✅ Found coords via', source, ':', lat, lng);
+    window.dispatchEvent(new CustomEvent('__coordx_coords', {
+      detail: { lat, lng, source }
+    }));
+  }
+
+  function parseCoords(text) {
+    if (!text) return null;
+
+    // Try to find [lat, lng] pattern
+    const bracketMatch = text.match(/\\[\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*(-?\\d{1,3}\\.\\d{3,})\\s*\\]/);
+    if (bracketMatch) {
+      const lat = parseFloat(bracketMatch[1]);
+      const lng = parseFloat(bracketMatch[2]);
+      if (isValidCoord(lat, lng)) return { lat, lng };
+    }
+
     // Try JSON parse
     try {
-      let parsed;
-      const text = typeof data === 'string' ? data.trim() : '';
-      
-      // Handle Google's )]}' prefix
-      if (text.startsWith(')]}')) {
-        const jsonPart = text.substring(text.indexOf('\\n') + 1);
-        try { parsed = JSON.parse(jsonPart); } catch {}
-      } else if (text.startsWith('[') || text.startsWith('{')) {
-        try { parsed = JSON.parse(text); } catch {}
-      }
-
-      if (parsed) {
-        const result = findCoordsInObject(parsed);
-        if (result) return result;
-      }
+      const data = JSON.parse(text);
+      const find = (obj, depth = 0) => {
+        if (depth > 10 || !obj) return null;
+        if (Array.isArray(obj)) {
+          if (obj.length >= 2 && typeof obj[0] === 'number' && typeof obj[1] === 'number') {
+            if (isValidCoord(obj[0], obj[1])) return { lat: obj[0], lng: obj[1] };
+          }
+          for (const item of obj) {
+            const r = find(item, depth + 1);
+            if (r) return r;
+          }
+        }
+        if (typeof obj === 'object' && obj !== null) {
+          const lat = obj.lat ?? obj.latitude ?? obj.y;
+          const lng = obj.lng ?? obj.lon ?? obj.longitude ?? obj.x;
+          if (typeof lat === 'number' && typeof lng === 'number' && isValidCoord(lat, lng)) {
+            return { lat, lng };
+          }
+          for (const v of Object.values(obj)) {
+            const r = find(v, depth + 1);
+            if (r) return r;
+          }
+        }
+        return null;
+      };
+      const result = find(data);
+      if (result) return result;
     } catch {}
-
-    // Try regex
-    const textResult = extractCoordsFromText(typeof data === 'string' ? data : JSON.stringify(data));
-    if (textResult) return textResult;
 
     return null;
   }
 
-  async function processRequest(url, response) {
-    requestCount++;
-    
-    // Log ALL requests for debugging (first 80 chars)
-    console.log('[CoordX Pro] #' + requestCount + ' 🌐', url.substring(0, 80));
-
-    try {
-      const cloned = response.clone();
-      const text = await cloned.text();
-
-      if (!text) return;
-
-      const coords = parseAllFormats(text, url);
-      if (coords) {
-        sendCoords(coords.lat, coords.lng, 'fetch:' + url.substring(0, 50));
-      }
-    } catch (e) {}
-  }
-
-  /* ─── Hook Fetch ─────────────────────────────────────── */
+  // Hook fetch
   const _fetch = window.fetch;
   window.fetch = async function(input, init) {
     const url = typeof input === 'string' ? input : input?.url || '';
     const response = await _fetch.apply(this, arguments);
-    processRequest(url, response).catch(() => {});
+    
+    try {
+      const cloned = response.clone();
+      const text = await cloned.text();
+      const coords = parseCoords(text);
+      if (coords) {
+        sendCoords(coords.lat, coords.lng, 'fetch');
+      }
+    } catch {}
+    
     return response;
   };
 
-  /* ─── Hook XMLHttpRequest ─────────────────────────────── */
+  // Hook XHR
   const _open = XMLHttpRequest.prototype.open;
   const _send = XMLHttpRequest.prototype.send;
-
   XMLHttpRequest.prototype.open = function(method, url) {
     this._url = url;
     return _open.apply(this, arguments);
   };
-
   XMLHttpRequest.prototype.send = function() {
     const xhr = this;
     xhr.addEventListener('load', function() {
-      requestCount++;
-      console.log('[CoordX Pro] #' + requestCount + ' 🌐 XHR:', (xhr._url || '').substring(0, 80));
-      
-      if (xhr.responseText) {
-        const coords = parseAllFormats(xhr.responseText, xhr._url);
-        if (coords) {
-          sendCoords(coords.lat, coords.lng, 'xhr');
-        }
-      }
+      try {
+        const coords = parseCoords(xhr.responseText);
+        if (coords) sendCoords(coords.lat, coords.lng, 'xhr');
+      } catch {}
     });
     return _send.apply(this, arguments);
   };
 
-  /* ─── Hook WebSocket ───────────────────────────────────── */
-  const _WS = window.WebSocket;
-  window.WebSocket = function(url, protocols) {
-    const ws = new _WS(url, protocols);
-    ws.addEventListener('message', function(e) {
-      if (typeof e.data === 'string' && e.data.length > 10) {
-        requestCount++;
-        console.log('[CoordX Pro] #' + requestCount + ' 🌐 WS message:', e.data.substring(0, 80));
-        const coords = parseAllFormats(e.data, url);
-        if (coords) {
-          sendCoords(coords.lat, coords.lng, 'websocket');
-        }
-      }
-    });
-    return ws;
-  };
-  window.WebSocket.prototype = _WS.prototype;
-
-  /* ─── Try to access Google Maps/Street View directly ─── */
-  function tryExtractFromWindow() {
-    // Try various possible locations for Street View data
-    const checks = [
-      () => window.google?.maps?.StreetViewPanorama?.getLocation?.()?.latLng?.lat && 
-            window.google?.maps?.StreetViewPanorama?.getLocation?.()?.latLng?.lng,
-      () => window.panorama?.getPosition?.()?.lat?.() && window.panorama?.getPosition?.()?.lng?.(),
-      () => window.sv?.getLocation?.()?.latLng?.lat && window.sv?.getLocation?.()?.latLng?.lng,
-      () => window.streetView?.getLocation?.()?.latLng,
-      () => window.__INITIAL_STATE__?.location,
-      () => window.__NEXT_DATA__?.props?.pageProps?.location,
-      () => window.gameState?.location,
-      () => window.__GAME_STATE__?.location,
-    ];
-
-    for (const check of checks) {
-      try {
-        const result = check();
-        if (result) {
-          let lat, lng;
-          if (typeof result.lat === 'function') {
-            lat = result.lat();
-            lng = result.lng();
-          } else if (result.lat !== undefined) {
-            lat = result.lat;
-            lng = result.lng;
-          } else if (typeof result === 'object') {
-            lat = result.latitude || result.lat;
-            lng = result.longitude || result.lng;
-          }
-          if (isValidCoord(lat, lng)) {
-            return { lat, lng };
-          }
-        }
-      } catch {}
-    }
-    return null;
-  }
-
-  // Poll for window data every 2 seconds
-  setInterval(() => {
-    const coords = tryExtractFromWindow();
-    if (coords) {
-      sendCoords(coords.lat, coords.lng, 'window_object');
-    }
-  }, 2000);
-
-  console.log('[CoordX Pro] ✅ All hooks installed - watching ALL requests');
-  console.log('[CoordX Pro] 💡 Start a game and check console for intercepted requests');
+  console.log('[CoordX Pro] Fetch/XHR hooks installed');
 })();
 `;
 
     (document.head || document.documentElement).appendChild(script);
     script.remove();
-    console.log('[CoordX Pro] Page script injected');
   }
 
-  // Inject immediately
-  if (document.documentElement) {
-    injectPageScript();
-  }
-  document.addEventListener('DOMContentLoaded', injectPageScript);
+  // Inject page script
+  injectPageScript();
 
-  // Listen for coords
+  // Listen for coordinates from page script
   window.addEventListener('__coordx_coords', (event) => {
     const { lat, lng, source } = event.detail;
-    console.log(`[CoordX Pro] 📍 Content script received:`, lat, lng, 'via', source);
+    console.log(`[CoordX Pro] 📍 Received coords:`, lat, lng, 'via', source);
 
     try {
       chrome.runtime.sendMessage({
@@ -315,5 +267,28 @@
       }).catch(() => {});
     } catch {}
   });
+
+  // Wait for DOM to be ready, then setup iframe monitoring
+  function init() {
+    console.log('[CoordX Pro] Setting up iframe monitoring...');
+    
+    // Check immediately
+    checkIframe();
+    
+    // Setup observer for DOM changes
+    setupIframeObserver();
+    
+    console.log('[CoordX Pro] ✅ Iframe monitoring active');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // Also check after a delay (for slow-loading iframes)
+  setTimeout(init, 1000);
+  setTimeout(init, 3000);
 
 })();
