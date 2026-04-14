@@ -1,4 +1,3 @@
-![Platform](https://img.shields.io/badge/platform-Chrome-green)
 
 | Game | Status |
 |------|--------|
