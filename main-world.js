@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Main World Script (v1.8.6)
+ * CoordX Pro — Main World Script (v1.8.7)
  * 
- * No spam logging, only important events
+ * Find EXISTING panoramas and poll their position
  */
 
 (function() {
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.6');
+  console.log('[CoordX Pro] Main world v1.8.7');
 
   function sendCoords(lat, lng, source) {
     window.postMessage({
@@ -33,130 +33,204 @@
       !(lat === 0 && lng === 0);
   }
 
-  // Track panorama instances (use WeakSet to avoid memory leaks)
-  const panoramas = new WeakSet();
-  let googleMapsHooked = false;
+  // Store found panoramas
+  const foundPanoramas = new Set();
+  let lastLat = null;
+  let lastLng = null;
+  let lastSource = '';
 
-  // Hook Google Maps StreetViewPanorama
-  function hookGoogleMaps() {
-    if (!window.google?.maps || googleMapsHooked) return;
-
-    const maps = window.google.maps;
-    if (!maps.StreetViewPanorama) return;
-
-    const OriginalPanorama = maps.StreetViewPanorama;
-    const self = this;
+  // Send coords only if different from last
+  function sendIfDifferent(lat, lng, source) {
+    if (!isValidCoord(lat, lng)) return;
     
-    maps.StreetViewPanorama = function(container, opts) {
-      const panorama = new OriginalPanorama(container, opts);
-      
-      if (!panoramas.has(panorama)) {
-        panoramas.add(panorama);
-        sendLog('Panorama created');
-        
-        // Hook setPosition
-        const originalSetPosition = panorama.setPosition;
-        panorama.setPosition = function(latLng) {
-          if (latLng) {
-            const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat;
-            const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng;
-            if (lat && lng) {
-              sendCoords(lat, lng, 'setPosition');
-            }
-          }
-          return originalSetPosition.apply(this, arguments);
-        };
+    // Check if significantly different
+    if (lastLat !== null && lastLng !== null) {
+      if (Math.abs(lat - lastLat) < 0.0001 && Math.abs(lng - lastLng) < 0.0001) {
+        return; // Same coords
       }
-      
-      return panorama;
-    };
-    maps.StreetViewPanorama.prototype = OriginalPanorama.prototype;
+    }
     
-    googleMapsHooked = true;
-    sendLog('Google Maps hooked');
+    lastLat = lat;
+    lastLng = lng;
+    lastSource = source;
+    sendCoords(lat, lng, source);
   }
 
-  // Poll panorama positions - only send if changed significantly
-  let lastPolledLat = null;
-  let lastPolledLng = null;
-
-  function pollPanoramas() {
-    // Find panoramas in window
-    const candidates = [
-      window.panorama,
-      window.streetViewPanorama,
-      window.sv,
-      window.__PANORAMA__
-    ];
-
-    for (const pano of candidates) {
-      if (pano && typeof pano.getPosition === 'function') {
+  // Find panorama in DOM elements
+  function findPanoramaInDOM() {
+    const allElements = document.querySelectorAll('*');
+    
+    for (const el of allElements) {
+      // Check common property names
+      const props = ['panorama', 'streetViewPanorama', 'sv', 'streetView', '_panorama'];
+      
+      for (const prop of props) {
         try {
-          const position = pano.getPosition();
-          if (position) {
-            const lat = typeof position.lat === 'function' ? position.lat() : position.lat;
-            const lng = typeof position.lng === 'function' ? position.lng() : position.lng;
-            
-            // Only send if significantly different (more than 100m)
-            if (lat && lng) {
-              if (lastPolledLat === null || lastPolledLng === null ||
-                  Math.abs(lat - lastPolledLat) > 0.001 ||
-                  Math.abs(lng - lastPolledLng) > 0.001) {
-                lastPolledLat = lat;
-                lastPolledLng = lng;
-                sendCoords(lat, lng, 'poll');
-              }
+          const pano = el[prop];
+          if (pano && typeof pano.getPosition === 'function') {
+            if (!foundPanoramas.has(pano)) {
+              foundPanoramas.add(pano);
+              sendLog('Found panorama in DOM: ' + prop);
             }
           }
         } catch (e) {}
       }
+      
+      // Check jQuery data
+      try {
+        if (el.jquery) {
+          const data = el.data();
+          if (data?.panorama || data?.streetView) {
+            const pano = data.panorama || data.streetView;
+            if (typeof pano.getPosition === 'function') {
+              if (!foundPanoramas.has(pano)) {
+                foundPanoramas.add(pano);
+                sendLog('Found panorama in jQuery data');
+              }
+            }
+          }
+        }
+      } catch (e) {}
     }
   }
 
-  // Hook fetch
-  function hookFetch() {
-    const originalFetch = window.fetch;
-    window.fetch = async function(url, options) {
-      const response = await originalFetch.apply(this, arguments);
-      
-      const urlStr = typeof url === 'string' ? url : url?.url || '';
-      
-      if (urlStr.includes('geoguessr') && urlStr.includes('/api/')) {
-        const clone = response.clone();
-        clone.json().then(data => {
-          const search = (obj, depth = 0) => {
-            if (depth > 10 || !obj || typeof obj !== 'object') return;
-            
-            if (isValidCoord(obj.lat, obj.lng)) {
-              sendCoords(obj.lat, obj.lng, 'fetch');
-              return;
-            }
-            if (obj.location && isValidCoord(obj.location.lat, obj.location.lng)) {
-              sendCoords(obj.location.lat, obj.location.lng, 'fetch');
-              return;
-            }
-            
-            if (Array.isArray(obj)) {
-              for (const item of obj) search(item, depth + 1);
-            } else {
-              for (const key in obj) {
-                if (key.toLowerCase().includes('round') || 
-                    key.toLowerCase().includes('coord') ||
-                    key.toLowerCase().includes('location')) {
-                  search(obj[key], depth + 1);
+  // Find panorama in window object
+  function findPanoramaInWindow() {
+    const searchPaths = [
+      ['panorama'],
+      ['streetViewPanorama'],
+      ['sv'],
+      ['streetView'],
+      ['game', 'panorama'],
+      ['game', 'streetView'],
+      ['map', 'streetView'],
+      ['google', 'maps', 'Map', 'streetView'],
+    ];
+
+    for (const path of searchPaths) {
+      try {
+        let obj = window;
+        for (const key of path) {
+          obj = obj[key];
+          if (!obj) break;
+        }
+        
+        if (obj && typeof obj.getPosition === 'function') {
+          if (!foundPanoramas.has(obj)) {
+            foundPanoramas.add(obj);
+            sendLog('Found panorama at window.' + path.join('.'));
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Also check google.maps instances
+    if (window.google?.maps?.Map) {
+      // Find all map instances
+      const mapDivs = document.querySelectorAll('[class*="map"], [id*="map"]');
+      for (const div of mapDivs) {
+        for (const key in div) {
+          if (key.startsWith('__') || key.startsWith('_')) {
+            try {
+              const map = div[key];
+              if (map && map.getStreetView) {
+                const sv = map.getStreetView();
+                if (sv && typeof sv.getPosition === 'function') {
+                  if (!foundPanoramas.has(sv)) {
+                    foundPanoramas.add(sv);
+                    sendLog('Found StreetView from Map instance');
+                  }
                 }
               }
-            }
-          };
-          search(data, 0);
-        }).catch(() => {});
+            } catch (e) {}
+          }
+        }
       }
-      
-      return response;
-    };
+    }
   }
 
-  // Try __NEXT_DATA__
+  // Poll all found panoramas
+  function pollPanoramas() {
+    for (const pano of foundPanoramas) {
+      try {
+        const position = pano.getPosition();
+        if (position) {
+          const lat = typeof position.lat === 'function' ? position.lat() : position.lat;
+          const lng = typeof position.lng === 'function' ? position.lng() : position.lng;
+          if (lat && lng) {
+            sendIfDifferent(lat, lng, 'poll');
+          }
+        }
+      } catch (e) {
+        // Panorama might be destroyed
+        foundPanoramas.delete(pano);
+      }
+    }
+  }
+
+  // Hook Google Maps for future panoramas
+  function hookGoogleMaps() {
+    if (!window.google?.maps) return false;
+
+    sendLog('Google Maps available');
+
+    // Hook StreetViewPanorama
+    const OriginalPanorama = window.google.maps.StreetViewPanorama;
+    if (OriginalPanorama && !OriginalPanorama.__hooked) {
+      window.google.maps.StreetViewPanorama = function(container, opts) {
+        sendLog('Creating panorama...');
+        const panorama = new OriginalPanorama(container, opts);
+        foundPanoramas.add(panorama);
+        
+        // Hook setPosition
+        const origSetPos = panorama.setPosition;
+        panorama.setPosition = function(latLng) {
+          if (latLng) {
+            const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat;
+            const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng;
+            sendLog('setPosition: ' + lat?.toFixed(4) + ', ' + lng?.toFixed(4));
+            if (lat && lng) {
+              sendIfDifferent(lat, lng, 'setPosition');
+            }
+          }
+          return origSetPos.apply(this, arguments);
+        };
+        
+        return panorama;
+      };
+      window.google.maps.StreetViewPanorama.prototype = OriginalPanorama.prototype;
+      window.google.maps.StreetViewPanorama.__hooked = true;
+      sendLog('StreetViewPanorama hooked');
+    }
+
+    // Also hook Map.getStreetView
+    const OriginalMap = window.google.maps.Map;
+    if (OriginalMap && !OriginalMap.__hooked) {
+      window.google.maps.Map = function(container, opts) {
+        const map = new OriginalMap(container, opts);
+        
+        // Hook getStreetView
+        const origGetSV = map.getStreetView;
+        map.getStreetView = function() {
+          const sv = origGetSV.call(this);
+          if (sv && !foundPanoramas.has(sv)) {
+            foundPanoramas.add(sv);
+            sendLog('Found StreetView via Map.getStreetView');
+          }
+          return sv;
+        };
+        
+        return map;
+      };
+      window.google.maps.Map.prototype = OriginalMap.prototype;
+      window.google.maps.Map.__hooked = true;
+      sendLog('Map hooked');
+    }
+
+    return true;
+  }
+
+  // Try __NEXT_DATA__ for initial coords
   function tryNextData() {
     const script = document.getElementById('__NEXT_DATA__');
     if (!script?.textContent) return;
@@ -174,30 +248,31 @@
 
         const r = rounds[roundIndex];
         if (r && isValidCoord(r.lat, r.lng)) {
-          sendCoords(r.lat, r.lng, 'next_data');
+          sendLog('Initial coords from __NEXT_DATA__');
+          sendIfDifferent(r.lat, r.lng, 'next_data');
         }
       }
     } catch (e) {}
   }
 
   // Initialize
-  hookFetch();
+  sendLog('Main world started');
   tryNextData();
-  sendLog('Main world ready');
+  hookGoogleMaps();
+  findPanoramaInWindow();
+  findPanoramaInDOM();
 
-  // Wait for Google Maps
-  const checkGoogle = setInterval(() => {
-    hookGoogleMaps();
-    if (googleMapsHooked) {
-      clearInterval(checkGoogle);
-    }
+  // Poll every second
+  setInterval(() => {
+    pollPanoramas();
+    findPanoramaInWindow();
+    findPanoramaInDOM();
   }, 1000);
 
-  // Poll every 2 seconds (not too fast)
-  setInterval(pollPanoramas, 2000);
+  // Try hooking again later
+  setTimeout(hookGoogleMaps, 1000);
+  setTimeout(hookGoogleMaps, 3000);
 
-  // Retry after delays
-  setTimeout(hookGoogleMaps, 2000);
-  setTimeout(hookGoogleMaps, 5000);
+  sendLog('Main world initialized');
 
 })();
