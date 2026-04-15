@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.7.2)
+ * CoordX Pro — Content Script (v1.7.3)
  * 
- * Better extraction with detailed logging
+ * Deep structure logging
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV172Injected) return;
-  window.__coordxProV172Injected = true;
+  if (window.__coordxProV173Injected) return;
+  window.__coordxProV173Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,13 +16,13 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.7.2 loaded');
-  logToBackground('Content v1.7.2 loaded');
+  console.log('[CoordX Pro] Content v1.7.3 loaded');
+  logToBackground('Content v1.7.3 loaded');
 
   let lastLat = null;
   let lastLng = null;
   let lastRoundIndex = -1;
-  let hasLoggedStructure = false;
+  let structureLogged = false;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -39,7 +39,6 @@
       return false;
     }
 
-    // Skip if same coords
     if (lastLat !== null && lastLng !== null) {
       if (Math.abs(lastLat - lat) < 0.0001 && Math.abs(lastLng - lng) < 0.0001) {
         return false;
@@ -66,132 +65,100 @@
     }
   }
 
-  // Log object structure (first level only)
-  function logStructure(name, obj, depth = 0) {
-    if (!obj || typeof obj !== 'object') return;
-    
-    const keys = Object.keys(obj).slice(0, 15);
-    logToBackground(name + ': [' + keys.join(', ') + ']');
-    
-    // Log specific important objects
-    if (depth < 2) {
-      for (const key of ['rounds', 'round', 'location', 'lat', 'lng', 'coordinates', 'map', 'challenge']) {
-        if (obj[key] !== undefined) {
-          if (typeof obj[key] === 'object' && obj[key] !== null) {
-            logStructure(name + '.' + key, obj[key], depth + 1);
-          } else {
-            logToBackground(name + '.' + key + ' = ' + obj[key]);
-          }
+  // Deep log object
+  function deepLog(name, obj, maxDepth = 2, currentDepth = 0) {
+    if (!obj || typeof obj !== 'object' || currentDepth >= maxDepth) return;
+
+    const keys = Object.keys(obj);
+    logToBackground(name + ' keys: [' + keys.slice(0, 20).join(', ') + ']');
+
+    for (const key of keys) {
+      const val = obj[key];
+      if (val && typeof val === 'object' && !Array.isArray(val) && currentDepth < maxDepth - 1) {
+        deepLog(name + '.' + key, val, maxDepth, currentDepth + 1);
+      } else if (Array.isArray(val) && val.length > 0 && currentDepth < maxDepth - 1) {
+        logToBackground(name + '.' + key + ' = Array[' + val.length + ']');
+        if (val[0] && typeof val[0] === 'object') {
+          deepLog(name + '.' + key + '[0]', val[0], maxDepth, currentDepth + 1);
+        }
+      } else if (typeof val === 'number' || typeof val === 'string') {
+        // Log coordinate-like values
+        if (key.toLowerCase().includes('lat') || key.toLowerCase().includes('lng') ||
+            key.toLowerCase().includes('lon') || key === 'x' || key === 'y') {
+          logToBackground(name + '.' + key + ' = ' + val);
         }
       }
     }
   }
 
-  // Try to extract coordinates from gameSnapshot
-  function extractFromGameSnapshot(snapshot) {
+  // Extract coordinates - try all possible paths
+  function extractCoords(snapshot) {
     if (!snapshot) return null;
 
     // Log structure once
-    if (!hasLoggedStructure) {
-      logStructure('gameSnapshot', snapshot);
-      hasLoggedStructure = true;
+    if (!structureLogged) {
+      deepLog('gameSnapshot', snapshot, 3);
+      structureLogged = true;
     }
 
-    // Try: snapshot.rounds[roundIndex]
+    // Path 1: snapshot.rounds[roundIndex]
     if (snapshot.rounds && Array.isArray(snapshot.rounds)) {
       const roundIndex = snapshot.round ?? 0;
+      logToBackground('roundIndex = ' + roundIndex + ', rounds.length = ' + snapshot.rounds.length);
+
       if (roundIndex >= 0 && roundIndex < snapshot.rounds.length) {
         const r = snapshot.rounds[roundIndex];
         if (r) {
-          // Try different coord properties
-          const lat = r.lat ?? r.latitude ?? r.y;
-          const lng = r.lng ?? r.lon ?? r.longitude ?? r.x;
+          // Try all possible lat/lng names
+          const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
+          const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
+
           if (isValidCoord(lat, lng)) {
-            return { lat, lng, roundIndex, source: 'gameSnapshot.rounds[' + roundIndex + ']' };
-          }
-          // Log what's in the round
-          if (!hasLoggedStructure) {
-            logStructure('round[' + roundIndex + ']', r);
+            return { lat, lng, roundIndex, source: 'rounds[' + roundIndex + ']' };
           }
         }
       }
     }
 
-    // Try: snapshot.location or snapshot.coordinate
-    if (snapshot.location) {
+    // Path 2: snapshot.coordinate
+    if (snapshot.coordinate) {
+      const c = snapshot.coordinate;
+      const lat = c.lat ?? c.latitude ?? c.y;
+      const lng = c.lng ?? c.lon ?? c.longitude ?? c.x;
+      if (isValidCoord(lat, lng)) {
+        return { lat, lng, source: 'coordinate' };
+      }
+    }
+
+    // Path 3: snapshot.location
+    if (snapshot.location && typeof snapshot.location === 'object') {
       const loc = snapshot.location;
       const lat = loc.lat ?? loc.latitude ?? loc.y;
       const lng = loc.lng ?? loc.lon ?? loc.longitude ?? loc.x;
       if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'gameSnapshot.location' };
+        return { lat, lng, source: 'location' };
       }
     }
 
-    // Try: snapshot.player
-    if (snapshot.player) {
-      const p = snapshot.player;
-      const lat = p.lat ?? p.latitude;
-      const lng = p.lng ?? p.longitude;
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'gameSnapshot.player' };
-      }
-    }
-
-    // Try: snapshot.panorama
-    if (snapshot.panorama) {
+    // Path 4: snapshot.panorama
+    if (snapshot.panorama && typeof snapshot.panorama === 'object') {
       const pan = snapshot.panorama;
-      const lat = pan.lat ?? pan.latitude;
-      const lng = pan.lng ?? pan.longitude;
+      const lat = pan.lat ?? pan.latitude ?? pan.y;
+      const lng = pan.lng ?? pan.lon ?? pan.longitude ?? pan.x;
       if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'gameSnapshot.panorama' };
+        return { lat, lng, source: 'panorama' };
       }
     }
 
-    return null;
-  }
-
-  // Try to extract from map property
-  function extractFromMap(map) {
-    if (!map) return null;
-
-    // Log structure once
-    if (!hasLoggedStructure) {
-      logStructure('map', map);
-    }
-
-    // Try common patterns
-    const lat = map.lat ?? map.latitude ?? map.center?.lat ?? map.center?.latitude;
-    const lng = map.lng ?? map.lon ?? map.longitude ?? map.center?.lng ?? map.center?.longitude;
-
-    if (isValidCoord(lat, lng)) {
-      return { lat, lng, source: 'map' };
+    // Path 5: Direct lat/lng on snapshot
+    if (isValidCoord(snapshot.lat, snapshot.lng)) {
+      return { lat: snapshot.lat, lng: snapshot.lng, source: 'snapshot direct' };
     }
 
     return null;
   }
 
-  // Try to extract from challenge property
-  function extractFromChallenge(challenge) {
-    if (!challenge) return null;
-
-    // Log structure once
-    if (!hasLoggedStructure) {
-      logStructure('challenge', challenge);
-    }
-
-    // Try common patterns
-    if (challenge.location) {
-      const lat = challenge.location.lat ?? challenge.location.latitude;
-      const lng = challenge.location.lng ?? challenge.location.longitude;
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'challenge.location' };
-      }
-    }
-
-    return null;
-  }
-
-  // WorldGuessr detection
+  // WorldGuessr
   function detectWorldGuessr() {
     const url = window.location.href;
     const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
@@ -220,11 +187,10 @@
     return null;
   }
 
-  // Main detection
+  // Main detect
   function detect() {
     const hostname = window.location.hostname;
 
-    // WorldGuessr
     if (hostname.includes('worldguessr.com')) {
       const result = detectWorldGuessr();
       if (result) {
@@ -234,12 +200,9 @@
       return false;
     }
 
-    // GeoGuessr
     if (hostname.includes('geoguessr.com')) {
       const script = document.getElementById('__NEXT_DATA__');
-      if (!script || !script.textContent) {
-        return false;
-      }
+      if (!script || !script.textContent) return false;
 
       let data;
       try {
@@ -248,44 +211,26 @@
         return false;
       }
 
-      const pp = data?.props?.pageProps;
-      if (!pp) return false;
-
-      // Try each extraction method
-      let result = null;
-
-      // 1. gameSnapshot
-      if (pp.gameSnapshot) {
-        result = extractFromGameSnapshot(pp.gameSnapshot);
-        if (result) {
-          // Check round change
-          if (result.roundIndex !== undefined && result.roundIndex !== lastRoundIndex) {
-            logToBackground('Round: ' + lastRoundIndex + ' → ' + result.roundIndex);
-            lastRoundIndex = result.roundIndex;
-            lastLat = null;
-            lastLng = null;
-          }
-          sendCoords(result.lat, result.lng, result.source);
-          return true;
+      const snapshot = data?.props?.pageProps?.gameSnapshot;
+      if (!snapshot) {
+        // Log what's in pageProps
+        const pp = data?.props?.pageProps;
+        if (pp && !structureLogged) {
+          logToBackground('pageProps: ' + Object.keys(pp).join(', '));
         }
+        return false;
       }
 
-      // 2. map
-      if (pp.map) {
-        result = extractFromMap(pp.map);
-        if (result) {
-          sendCoords(result.lat, result.lng, result.source);
-          return true;
+      const result = extractCoords(snapshot);
+      if (result) {
+        if (result.roundIndex !== undefined && result.roundIndex !== lastRoundIndex) {
+          logToBackground('Round: ' + lastRoundIndex + ' → ' + result.roundIndex);
+          lastRoundIndex = result.roundIndex;
+          lastLat = null;
+          lastLng = null;
         }
-      }
-
-      // 3. challenge
-      if (pp.challenge) {
-        result = extractFromChallenge(pp.challenge);
-        if (result) {
-          sendCoords(result.lat, result.lng, result.source);
-          return true;
-        }
+        sendCoords(result.lat, result.lng, result.source);
+        return true;
       }
 
       return false;
@@ -294,20 +239,20 @@
     return false;
   }
 
-  // Listen for force check
+  // Force check listener
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'forceCheck') {
       logToBackground('Force check');
       lastLat = null;
       lastLng = null;
       lastRoundIndex = -1;
-      hasLoggedStructure = false;
+      structureLogged = false;
       detect();
       sendResponse({ success: true });
     }
   });
 
-  // Initial
+  // Init
   function init() {
     detect();
   }
@@ -333,13 +278,13 @@
       lastLat = null;
       lastLng = null;
       lastRoundIndex = -1;
-      hasLoggedStructure = false;
+      structureLogged = false;
       setTimeout(init, 300);
       setTimeout(init, 1000);
     }
   }, 500);
 
-  // Next button click
+  // Next button
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT')) {
@@ -347,7 +292,7 @@
       lastLat = null;
       lastLng = null;
       lastRoundIndex = -1;
-      hasLoggedStructure = false;
+      structureLogged = false;
       setTimeout(init, 300);
       setTimeout(init, 1000);
       setTimeout(init, 2000);
