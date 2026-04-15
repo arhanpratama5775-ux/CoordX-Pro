@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.7.6)
+ * CoordX Pro — Content Script (v1.7.7)
  * 
  * Fix log spam and round detection
  */
@@ -16,8 +16,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.7.6 loaded');
-  logToBackground('Content v1.7.6 loaded');
+  console.log('[CoordX Pro] Content v1.7.7 loaded');
+  logToBackground('Content v1.7.7 loaded');
 
   let lastLat = null;
   let lastLng = null;

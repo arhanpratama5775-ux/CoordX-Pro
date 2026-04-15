@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Map Script (v1.5.5)
+ * CoordX Pro — Map Script (v1.7.7)
  * 
  * Simple marker only - no coords in popup
  */
