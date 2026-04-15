@@ -123,15 +123,25 @@ function processAndSendCoords(lat, lng, source) {
   // ALWAYS update and send - user might be on a new round
   log(`✅ COORDS from ${source}:`, lat.toFixed(4), lng.toFixed(4));
   lastCoords = { lat, lng };
-  chrome.storage.local.set({ lastCoords: { lat, lng } });
+  
+  // Save to storage and log
+  chrome.storage.local.set({ lastCoords: { lat, lng } }).then(() => {
+    log('💾 Saved to storage:', lat.toFixed(4), lng.toFixed(4));
+  }).catch(e => {
+    log('❌ Storage save failed:', e.message);
+  });
 
-  // Notify sidepanel
+  // Notify sidepanel via message (backup)
   chrome.runtime.sendMessage({
     type: 'coordFound',
     lat,
     lng,
     source
-  }).catch(() => {});
+  }).then(() => {
+    log('📤 Sent coordFound message to sidepanel');
+  }).catch(e => {
+    log('⚠️ coordFound message failed:', e.message);
+  });
 }
 
 /* ─── GeoGuessr API Interception via webRequest ─────────── */

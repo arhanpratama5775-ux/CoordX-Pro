@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.5.2)
+ * CoordX Pro — Content Script (v1.5.3)
  * 
  * Simplified approach with better logging
  */
@@ -8,8 +8,8 @@
   'use strict';
 
   // Prevent double injection
-  if (window.__coordxProV152Injected) return;
-  window.__coordxProV152Injected = true;
+  if (window.__coordxProV153Injected) return;
+  window.__coordxProV153Injected = true;
 
   /* ─── Logging ────────────────────────────────────────── */
 
@@ -21,7 +21,7 @@
     } catch (e) {}
   }
 
-  log('🚀 Content script v1.5.2 loaded');
+  log('🚀 Content script v1.5.3 loaded');
 
   /* ─── State ──────────────────────────────────────────── */
 

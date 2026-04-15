@@ -1,11 +1,21 @@
 /**
- * CoordX Pro — Side Panel Script (v1.5.2)
+ * CoordX Pro — Side Panel Script (v1.5.3)
  */
 
 (function () {
   'use strict';
 
   const $ = id => document.getElementById(id);
+
+  /* ─── Logging to Extension Logs ───────────────────────── */
+
+  async function logToExtension(message) {
+    const time = new Date().toISOString();
+    console.log('[CoordX Pro]', message);
+    try {
+      await chrome.runtime.sendMessage({ type: 'log', message: '[SIDE] ' + message, time });
+    } catch (e) {}
+  }
 
   const els = {
     statusText: $('statusText'),
@@ -39,12 +49,12 @@
   let logsVisible = false;
   let autoScrollEnabled = false;
 
-  console.log('[CoordX Pro] Side panel v1.5.2 loaded');
+  logToExtension('🚀 Side panel v1.5.3 loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
   async function init() {
-    console.log('[CoordX Pro] Initializing...');
+    logToExtension('Initializing...');
     
     const storage = await chrome.storage.local.get(['trackingEnabled', 'lastCoords']);
 
@@ -53,7 +63,7 @@
     }
 
     if (storage.lastCoords) {
-      console.log('[CoordX Pro] Restoring coords:', storage.lastCoords);
+      logToExtension('Restoring coords from storage: ' + storage.lastCoords.lat?.toFixed?.(4) + ', ' + storage.lastCoords.lng?.toFixed?.(4));
       currentCoords = storage.lastCoords;
       updateCoordinates(storage.lastCoords.lat, storage.lastCoords.lng);
       els.statusText.textContent = 'Location found!';
@@ -129,15 +139,16 @@
   /* ─── Coordinate Update Handler ─────────────────────── */
 
   function handleNewCoords(lat, lng, source) {
-    console.log('[CoordX Pro] 📍 handleNewCoords:', lat?.toFixed?.(4), lng?.toFixed?.(4), 'from', source);
+    logToExtension('📍 handleNewCoords called: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4) + ' from ' + source);
 
     if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) {
-      console.error('[CoordX Pro] Invalid coords received:', lat, lng);
+      logToExtension('❌ Invalid coords received: ' + lat + ', ' + lng);
       return;
     }
 
     // ALWAYS update - user might be on a new round
     currentCoords = { lat, lng };
+    logToExtension('✅ Updating UI with new coords');
 
     // Update UI
     updateCoordinates(lat, lng);
@@ -154,7 +165,9 @@
   /* ─── Message Listener ──────────────────────────────── */
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    logToExtension('📨 Received message: ' + message.type);
     if (message.type === 'coordFound') {
+      logToExtension('🎉 coordFound message! Lat: ' + message.lat + ', Lng: ' + message.lng);
       handleNewCoords(message.lat, message.lng, message.source || 'message');
     }
   });
@@ -162,8 +175,11 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
 
+    logToExtension('📦 Storage changed: ' + Object.keys(changes).join(', '));
+
     if (changes.lastCoords && changes.lastCoords.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
+      logToExtension('🔄 lastCoords changed! New: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4));
       handleNewCoords(lat, lng, 'storage');
     }
   });
