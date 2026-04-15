@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.6.2)
+ * CoordX Pro — Side Panel Script (v1.7.0)
  */
 
 (function () {
@@ -37,8 +37,10 @@
   let currentCoords = null;
   let geocodeTimeout = null;
   let logsVisible = false;
+  let currentLat = null;
+  let currentLng = null;
 
-  console.log('[CoordX Pro] Side panel v1.6.2 loaded');
+  console.log('[CoordX Pro] Side panel v1.7.0 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
@@ -50,16 +52,36 @@
     }
 
     if (storage.lastCoords) {
-      updateUI(storage.lastCoords.lat, storage.lastCoords.lng);
+      const { lat, lng } = storage.lastCoords;
+      if (lat && lng) {
+        updateUI(lat, lng);
+      }
     } else {
       els.statusText.textContent = 'Searching...';
     }
 
     loadLogs();
     setInterval(loadLogs, 2000);
+    
+    // Also poll for coords in case storage change missed
+    setInterval(checkCoords, 3000);
   }
 
   init();
+
+  /* ─── Check coords periodically ──────────────────────── */
+
+  async function checkCoords() {
+    try {
+      const storage = await chrome.storage.local.get(['lastCoords']);
+      if (storage.lastCoords) {
+        const { lat, lng } = storage.lastCoords;
+        if (lat && lng && (lat !== currentLat || lng !== currentLng)) {
+          updateUI(lat, lng);
+        }
+      }
+    } catch (e) {}
+  }
 
   /* ─── Logs ───────────────────────────────────────────── */
 
@@ -70,11 +92,11 @@
       els.logCount.textContent = logs.length;
       
       if (logs.length === 0) {
-        els.logsContent.innerHTML = '<div class="log-empty">No logs</div>';
+        els.logsContent.innerHTML = '<div class="log-empty">No logs yet. Start a game!</div>';
         return;
       }
       
-      els.logsContent.innerHTML = logs.slice(-30).map(log => {
+      els.logsContent.innerHTML = logs.slice(-20).map(log => {
         const time = log.time.split('T')[1]?.split('.')[0] || '';
         return `<div class="log-entry"><span class="log-time">${time}</span> ${escapeHtml(log.message)}</div>`;
       }).join('');
@@ -93,7 +115,11 @@
     if (logsVisible) loadLogs();
   });
 
-  els.refreshLogsBtn.addEventListener('click', loadLogs);
+  els.refreshLogsBtn.addEventListener('click', () => {
+    loadLogs();
+    // Also trigger content script re-check
+    chrome.runtime.sendMessage({ type: 'forceUpdate' });
+  });
 
   els.clearLogsBtn.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ type: 'clearLogs' });
@@ -103,8 +129,12 @@
   /* ─── UI Update ──────────────────────────────────────── */
 
   function updateUI(lat, lng) {
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+    
     console.log('[CoordX Pro] Update UI:', lat, lng);
     
+    currentLat = lat;
+    currentLng = lng;
     currentCoords = { lat, lng };
     
     // Update coords display
@@ -117,20 +147,20 @@
     els.statusText.classList.add('found');
     
     // Send to map iframe
-    if (els.mapFrame?.contentWindow) {
-      els.mapFrame.contentWindow.postMessage({
-        type: 'updateCoords',
-        lat, lng
-      }, '*');
-      
-      // Retry a few times
-      setTimeout(() => {
-        els.mapFrame?.contentWindow?.postMessage({ type: 'updateCoords', lat, lng }, '*');
-      }, 100);
-      setTimeout(() => {
-        els.mapFrame?.contentWindow?.postMessage({ type: 'updateCoords', lat, lng }, '*');
-      }, 300);
-    }
+    const sendToMap = () => {
+      if (els.mapFrame?.contentWindow) {
+        els.mapFrame.contentWindow.postMessage({
+          type: 'updateCoords',
+          lat: lat,
+          lng: lng
+        }, '*');
+      }
+    };
+    
+    sendToMap();
+    setTimeout(sendToMap, 100);
+    setTimeout(sendToMap, 300);
+    setTimeout(sendToMap, 500);
     
     // Fetch geocoding
     reverseGeocode(lat, lng);
@@ -143,7 +173,9 @@
     
     if (changes.lastCoords?.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      updateUI(lat, lng);
+      if (lat && lng) {
+        updateUI(lat, lng);
+      }
     }
   });
 
@@ -197,6 +229,8 @@
   els.resetBtn.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ type: 'resetSearch' });
     currentCoords = null;
+    currentLat = null;
+    currentLng = null;
     els.latValue.textContent = '—';
     els.lngValue.textContent = '—';
     els.coordSection.classList.remove('active');
@@ -216,6 +250,9 @@
     if (els.mapFrame?.contentWindow) {
       els.mapFrame.contentWindow.postMessage({ type: 'resetMap' }, '*');
     }
+    
+    // Trigger re-check
+    chrome.runtime.sendMessage({ type: 'forceUpdate' });
   });
 
   els.copyCoordsBtn.addEventListener('click', () => {
