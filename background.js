@@ -1,7 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.7.0)
- * 
- * Uses webRequest API to intercept GeoGuessr API calls
+ * CoordX Pro — Background Service Worker (v1.7.1)
  */
 
 const LOG_KEY = 'coordx_logs';
@@ -33,29 +31,12 @@ function log(msg) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.7.0');
+  log('Extension installed v1.7.1');
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 });
-
-/* ─── Intercept GeoGuessr API ─────────────────────────── */
-
-// Listen for completed requests to GeoGuessr API
-chrome.webRequest.onCompleted.addListener(
-  (details) => {
-    // Only process API responses
-    if (!details.url.includes('geoguessr.com')) return;
-    if (!details.url.includes('/api/') && !details.url.includes('game')) return;
-    
-    log('Request: ' + details.url.substring(0, 80));
-  },
-  { urls: ['*://*.geoguessr.com/*'] }
-);
-
-// We need to use onBeforeRequest with requestBody, but that's limited
-// Instead, let's use a content script approach
 
 /* ─── Message Handler ────────────────────────────────── */
 
@@ -91,31 +72,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'contentCoords':
       const { lat, lng, source } = message;
-      
+
       if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
         sendResponse({ success: false });
         break;
       }
-      
+
       // Check if different
-      if (lastCoords && 
-          Math.abs(lastCoords.lat - lat) < 0.0001 && 
+      if (lastCoords &&
+          Math.abs(lastCoords.lat - lat) < 0.0001 &&
           Math.abs(lastCoords.lng - lng) < 0.0001) {
         sendResponse({ success: true, skipped: true });
         break;
       }
-      
+
       lastCoords = { lat, lng };
       log('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-      
-      // Save to storage - this will trigger sidepanel update
+
+      // Save to storage
       chrome.storage.local.set({ lastCoords: { lat, lng } });
-      
+
       sendResponse({ success: true });
       break;
-      
+
     case 'forceUpdate':
-      // Force update from content script
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs[0]) {
           chrome.tabs.sendMessage(tabs[0].id, { type: 'forceCheck' });
@@ -126,4 +106,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.7.0 ready');
+log('Background v1.7.1 ready');

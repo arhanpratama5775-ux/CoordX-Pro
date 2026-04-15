@@ -1,20 +1,30 @@
 /**
- * CoordX Pro — Content Script (v1.7.0)
+ * CoordX Pro — Content Script (v1.7.1)
  * 
- * Multiple detection methods for maximum compatibility
+ * Simplified detection with better logging
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV170Injected) return;
-  window.__coordxProV170Injected = true;
+  if (window.__coordxProV171Injected) return;
+  window.__coordxProV171Injected = true;
 
-  console.log('[CoordX Pro] Content script v1.7.0 loaded');
+  const LOG_PREFIX = '[CoordX Pro]';
+
+  function logToBackground(msg) {
+    try {
+      chrome.runtime.sendMessage({ type: 'log', message: msg });
+    } catch (e) {}
+  }
+
+  console.log(LOG_PREFIX, 'Content v1.7.1 loaded');
+  logToBackground('Content v1.7.1 loaded');
 
   let lastLat = null;
   let lastLng = null;
-  let found = false;
+  let lastRoundIndex = -1;
+  let checkCount = 0;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -27,23 +37,23 @@
 
   function sendCoords(lat, lng, source) {
     if (!isValidCoord(lat, lng)) {
-      console.log('[CoordX Pro] Invalid coords:', lat, lng);
+      logToBackground('Invalid coords: ' + lat + ', ' + lng);
       return false;
     }
-    
-    // Skip if same
+
+    // Skip if same coords
     if (lastLat !== null && lastLng !== null) {
       if (Math.abs(lastLat - lat) < 0.0001 && Math.abs(lastLng - lng) < 0.0001) {
         return false;
       }
     }
-    
+
     lastLat = lat;
     lastLng = lng;
-    found = true;
-    
-    console.log('[CoordX Pro] ✅ Found:', lat.toFixed(4), lng.toFixed(4), 'via', source);
-    
+
+    logToBackground('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    console.log(LOG_PREFIX, 'Found:', lat, lng, 'via', source);
+
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
@@ -53,41 +63,89 @@
       });
       return true;
     } catch (e) {
-      console.error('[CoordX Pro] Send failed:', e);
+      logToBackground('Send failed: ' + e.message);
       return false;
     }
   }
 
-  // Method 1: __NEXT_DATA__
-  function method1_NextData() {
+  // Parse __NEXT_DATA__
+  function parseNextData() {
     const script = document.getElementById('__NEXT_DATA__');
-    if (!script || !script.textContent) return null;
-    
+    if (!script) {
+      return { error: 'No __NEXT_DATA__ element' };
+    }
+    if (!script.textContent) {
+      return { error: '__NEXT_DATA__ empty' };
+    }
+
     try {
       const data = JSON.parse(script.textContent);
-      const snapshot = data.props?.pageProps?.gameSnapshot;
-      
-      if (!snapshot?.rounds) return null;
-      
-      const roundIndex = snapshot.round ?? 0;
-      const rounds = snapshot.rounds;
-      
-      if (roundIndex >= 0 && roundIndex < rounds.length) {
-        const r = rounds[roundIndex];
-        if (r && isValidCoord(r.lat, r.lng)) {
-          return { lat: r.lat, lng: r.lng, source: 'next_data' };
+      return { data };
+    } catch (e) {
+      return { error: 'JSON parse failed: ' + e.message };
+    }
+  }
+
+  // Extract coords from parsed data
+  function extractCoordsFromNextData(data) {
+    // Try multiple paths
+    const paths = [
+      // Battle Royale / standard games
+      () => {
+        const snapshot = data?.props?.pageProps?.gameSnapshot;
+        if (!snapshot?.rounds) return null;
+        
+        const roundIndex = snapshot.round ?? 0;
+        const rounds = snapshot.rounds;
+        
+        if (roundIndex >= 0 && roundIndex < rounds.length) {
+          const r = rounds[roundIndex];
+          if (r && isValidCoord(r.lat, r.lng)) {
+            return { lat: r.lat, lng: r.lng, roundIndex, source: 'next_data_rounds' };
+          }
         }
+        return null;
+      },
+      // Try player property
+      () => {
+        const player = data?.props?.pageProps?.player;
+        if (player && isValidCoord(player.lat, player.lng)) {
+          return { lat: player.lat, lng: player.lng, source: 'next_data_player' };
+        }
+        return null;
+      },
+      // Try location property
+      () => {
+        const location = data?.props?.pageProps?.location;
+        if (location && isValidCoord(location.lat, location.lng)) {
+          return { lat: location.lat, lng: location.lng, source: 'next_data_location' };
+        }
+        return null;
+      },
+      // Try game property
+      () => {
+        const game = data?.props?.pageProps?.game;
+        if (game?.round?.lat !== undefined && game?.round?.lng !== undefined) {
+          if (isValidCoord(game.round.lat, game.round.lng)) {
+            return { lat: game.round.lat, lng: game.round.lng, source: 'next_data_game' };
+          }
+        }
+        return null;
       }
-    } catch (e) {}
-    
+    ];
+
+    for (const getPath of paths) {
+      const result = getPath();
+      if (result) return result;
+    }
+
     return null;
   }
 
-  // Method 2: Look for location in URL
-  function method2_URL() {
+  // WorldGuessr detection
+  function detectWorldGuessr() {
+    // Check URL params
     const url = window.location.href;
-    
-    // Check for location parameter
     const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
     if (locMatch) {
       const lat = parseFloat(locMatch[1]);
@@ -96,12 +154,8 @@
         return { lat, lng, source: 'url' };
       }
     }
-    
-    return null;
-  }
 
-  // Method 3: Check iframes (WorldGuessr)
-  function method3_Iframe() {
+    // Check iframes
     const iframes = document.querySelectorAll('iframe');
     for (const iframe of iframes) {
       if (iframe.src && iframe.src.includes('location=')) {
@@ -115,69 +169,83 @@
         }
       }
     }
+
     return null;
   }
 
-  // Method 4: Check window variables
-  function method4_Window() {
-    // Try common variable names
-    const vars = ['__GAME_DATA__', '__INITIAL_STATE__', 'gameData', 'GAME_STATE'];
-    for (const v of vars) {
-      try {
-        const data = window[v];
-        if (data && data.lat && data.lng) {
-          if (isValidCoord(data.lat, data.lng)) {
-            return { lat: data.lat, lng: data.lng, source: 'window_' + v };
-          }
-        }
-      } catch (e) {}
-    }
-    return null;
-  }
-
-  // Try all methods
+  // Main detection
   function detect() {
+    checkCount++;
     const hostname = window.location.hostname;
-    
+
     // WorldGuessr
     if (hostname.includes('worldguessr.com')) {
-      const result = method3_Iframe() || method2_URL();
+      const result = detectWorldGuessr();
       if (result) {
         sendCoords(result.lat, result.lng, result.source);
         return true;
       }
       return false;
     }
-    
+
     // GeoGuessr
     if (hostname.includes('geoguessr.com')) {
-      const result = method1_NextData();
-      if (result) {
-        sendCoords(result.lat, result.lng, result.source);
-        return true;
+      const result = parseNextData();
+
+      if (result.error) {
+        // Only log error once every 10 checks to reduce spam
+        if (checkCount % 10 === 1) {
+          logToBackground('GeoGuessr: ' + result.error);
+        }
+        return false;
       }
-      
-      // Log that we couldn't find data
-      console.log('[CoordX Pro] No data found in __NEXT_DATA__');
+
+      const coords = extractCoordsFromNextData(result.data);
+
+      if (coords) {
+        // Check if round changed
+        if (coords.roundIndex !== undefined && coords.roundIndex !== lastRoundIndex) {
+          logToBackground('Round changed: ' + lastRoundIndex + ' -> ' + coords.roundIndex);
+          lastRoundIndex = coords.roundIndex;
+          // Force update even if coords are same
+          lastLat = null;
+          lastLng = null;
+        }
+        sendCoords(coords.lat, coords.lng, coords.source);
+        return true;
+      } else {
+        // Log data structure for debugging (only once every 10 checks)
+        if (checkCount % 10 === 1) {
+          const pp = result.data?.props?.pageProps;
+          if (pp) {
+            const keys = Object.keys(pp).slice(0, 10).join(', ');
+            logToBackground('pageProps keys: ' + keys);
+          } else {
+            logToBackground('No pageProps');
+          }
+        }
+      }
+
       return false;
     }
-    
+
     return false;
   }
 
-  // Listen for force check message
+  // Listen for force check
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'forceCheck') {
+      logToBackground('Force check triggered');
       lastLat = null;
       lastLng = null;
+      lastRoundIndex = -1;
       detect();
       sendResponse({ success: true });
     }
   });
 
-  // Initial check
+  // Initial
   function init() {
-    console.log('[CoordX Pro] Running detection...');
     detect();
   }
 
@@ -187,41 +255,36 @@
     init();
   }
 
-  // Retry multiple times
+  // Retry
   setTimeout(init, 500);
   setTimeout(init, 1500);
   setTimeout(init, 3000);
-  setTimeout(init, 5000);
 
-  // Poll every 3 seconds if not found
-  setInterval(() => {
-    if (!found) {
-      detect();
-    }
-  }, 3000);
+  // Poll every 2 seconds
+  setInterval(detect, 2000);
 
-  // URL change detection
+  // URL change
   let lastUrl = location.href;
   setInterval(() => {
     if (location.href !== lastUrl) {
-      console.log('[CoordX Pro] URL changed');
+      logToBackground('URL changed');
       lastUrl = location.href;
       lastLat = null;
       lastLng = null;
-      found = false;
+      lastRoundIndex = -1;
       setTimeout(init, 300);
       setTimeout(init, 1000);
     }
   }, 500);
 
-  // NEXT button click
+  // Next button click
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT')) {
-      console.log('[CoordX Pro] NEXT clicked');
+      logToBackground('NEXT clicked');
       lastLat = null;
       lastLng = null;
-      found = false;
+      lastRoundIndex = -1;
       setTimeout(init, 300);
       setTimeout(init, 1000);
       setTimeout(init, 2000);

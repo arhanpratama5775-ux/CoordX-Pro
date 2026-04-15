@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.7.0)
+ * CoordX Pro — Side Panel Script (v1.7.1)
  */
 
 (function () {
@@ -40,7 +40,7 @@
   let currentLat = null;
   let currentLng = null;
 
-  console.log('[CoordX Pro] Side panel v1.7.0 loaded');
+  console.log('[CoordX Pro] Side panel v1.7.1 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
