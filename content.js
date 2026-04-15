@@ -123,10 +123,20 @@
         log(`  Round ${i+1}: lat=${r.lat.toFixed(4)}, lng=${r.lng.toFixed(4)}`);
       });
 
-      // Get current round from gameSnapshot.round (0-indexed)
+      // Get current round from gameSnapshot.round
+      // Note: round might be 0-indexed or 1-indexed depending on game state
       if (snapshot.round !== undefined) {
-        currentRoundIndex = snapshot.round;
-        log('🎮 Current round from gameSnapshot.round:', snapshot.round, '(UI will show Round', snapshot.round + 1, ')');
+        let roundIndex = snapshot.round;
+        
+        // If round >= rounds.length, it might be pointing to "next" round
+        // In that case, use the last available round
+        if (roundIndex >= allRounds.length) {
+          roundIndex = allRounds.length - 1;
+          log('⚠️ gameSnapshot.round', snapshot.round, '>= rounds.length', allRounds.length, '- using', roundIndex);
+        }
+        
+        currentRoundIndex = Math.max(0, roundIndex);
+        log('🎮 Current round:', currentRoundIndex + 1, '/', allRounds.length);
       }
       
       // Also check if there's a "progress" or "state" field
@@ -196,6 +206,13 @@
   function sendCurrentRoundCoords(source) {
     const now = Date.now();
     let domRound = currentRoundIndex;
+    
+    // Bounds check for currentRoundIndex
+    if (currentRoundIndex >= allRounds.length && allRounds.length > 0) {
+      currentRoundIndex = allRounds.length - 1;
+      lastSentRound = -1;
+      log('⚠️ Fixed out-of-bounds round index to', currentRoundIndex + 1);
+    }
     
     // Only use DOM detection if not in grace period after clicking NEXT
     if (now > ignoreDOMUntil) {

@@ -276,6 +276,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.rounds && Array.isArray(message.rounds)) {
         allRounds = message.rounds;
         currentRoundIndex = message.currentRound || 0;
+        
+        // Bounds check - ensure round index is valid
+        if (currentRoundIndex >= allRounds.length) {
+          currentRoundIndex = Math.max(0, allRounds.length - 1);
+          log('⚠️ Round index out of bounds, adjusted to', currentRoundIndex + 1);
+        }
+        
         log('Received', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
         
         // Send current round coords
