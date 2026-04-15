@@ -164,11 +164,9 @@
     const roundEl = document.querySelector('[data-qa="round-number"]');
     if (roundEl) {
       const text = roundEl.textContent || '';
-      log('Found round element:', text);
       const match = text.match(/(\d+)\s*[\/\|]/);
       if (match) {
         const round = parseInt(match[1]) - 1; // 0-indexed
-        log('Parsed round from DOM:', round);
         return round;
       }
     }
@@ -178,7 +176,6 @@
     const match = allText.match(/ROUND\s*(\d+)\s*[\/\|]/i);
     if (match) {
       const round = parseInt(match[1]) - 1;
-      log('Found ROUND in body text:', round);
       return round;
     }
 
@@ -189,7 +186,6 @@
       const match = text.match(/(\d+)\s*[\/\|]/);
       if (match) {
         const round = parseInt(match[1]) - 1;
-        log('Found round indicator:', text, '->', round);
         return round;
       }
     }
@@ -200,9 +196,16 @@
   /* ─── Send Current Round Coords ──────────────────────── */
 
   let lastLoggedRound = -1;
+  let ignoreDOMUntil = 0; // Timestamp to ignore DOM round detection
 
   function sendCurrentRoundCoords(source) {
-    const domRound = getCurrentRoundFromDOM();
+    const now = Date.now();
+    let domRound = currentRoundIndex;
+    
+    // Only use DOM detection if not in grace period after clicking NEXT
+    if (now > ignoreDOMUntil) {
+      domRound = getCurrentRoundFromDOM();
+    }
     
     // Only log detailed info if something changed
     if (domRound !== lastLoggedRound || source === 'init' || source.includes('click')) {
@@ -406,14 +409,17 @@
         if (currentRoundIndex < allRounds.length - 1) {
           currentRoundIndex++;
           lastSentRound = -1;
-          log('Advanced to round', currentRoundIndex + 1);
+          log('➡️ Advancing to round', currentRoundIndex + 1);
+          
+          // Set grace period - ignore DOM detection for 3 seconds
+          ignoreDOMUntil = Date.now() + 3000;
         }
         
-        // Send new coords after delays
-        setTimeout(() => sendCurrentRoundCoords('click'), 200);
+        // Send new coords after delays (DOM needs time to update)
+        setTimeout(() => sendCurrentRoundCoords('click'), 100);
         setTimeout(() => sendCurrentRoundCoords('click2'), 500);
-        setTimeout(() => sendCurrentRoundCoords('click3'), 1000);
-        setTimeout(() => sendCurrentRoundCoords('click4'), 2000);
+        setTimeout(() => sendCurrentRoundCoords('click3'), 1500);
+        setTimeout(() => sendCurrentRoundCoords('click4'), 3000);
       }
     }, true);
     
