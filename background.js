@@ -1,15 +1,17 @@
 /**
- * CoordX Pro — Background Service Worker (v1.2.2)
+ * CoordX Pro — Background Service Worker (v1.3.0)
  * 
- * SUPER AGGRESSIVE - Always accepts new coordinates
- * No more blocking on searching flag
- * Supports round change detection for GeoGuessr
+ * DUAL APPROACH:
+ * 1. Content script for WorldGuessr (iframe detection)
+ * 2. webRequest API for GeoGuessr (intercept API calls directly)
  */
 
 /* ─── State ─────────────────────────────────────────────── */
 
 let lastCoords = null;
 let trackingEnabled = true;
+let allRounds = []; // Store all rounds for GeoGuessr
+let currentRoundIndex = 0;
 
 const SUPPORTED_SITES = [
   'geoguessr.com',
@@ -32,6 +34,7 @@ chrome.runtime.onInstalled.addListener(() => {
     lastCoords: null,
     lastAddress: null
   });
+  console.log('[CoordX Pro] Extension installed');
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -66,7 +69,9 @@ function isValidCoord(lat, lng) {
     !isNaN(lat) && !isNaN(lng) &&
     lat >= -90 && lat <= 90 &&
     lng >= -180 && lng <= 180 &&
-    !(lat === 0 && lng === 0)
+    !(lat === 0 && lng === 0) &&
+    Math.abs(lat) > 0.001 &&
+    Math.abs(lng) > 0.001
   );
 }
 
@@ -78,6 +83,78 @@ function isDifferentCoord(lat, lng) {
   );
 }
 
+function processAndSendCoords(lat, lng, source) {
+  if (!isValidCoord(lat, lng)) return;
+
+  const isNew = isDifferentCoord(lat, lng);
+
+  if (isNew) {
+    console.log(`[CoordX Pro] ✅ NEW COORDS from ${source}:`, lat, lng);
+    lastCoords = { lat, lng };
+    chrome.storage.local.set({ lastCoords: { lat, lng } });
+
+    // Notify sidepanel
+    chrome.runtime.sendMessage({
+      type: 'coordFound',
+      lat,
+      lng,
+      source
+    }).catch(() => {});
+  }
+}
+
+/* ─── GeoGuessr API Interception via webRequest ─────────── */
+
+// Parse response body from GeoGuessr API calls
+async function parseGeoGuessrResponse(responseBody) {
+  try {
+    const data = JSON.parse(responseBody);
+    console.log('[CoordX Pro] Parsed GeoGuessr response');
+
+    // Check for gameSnapshot
+    if (data.gameSnapshot) {
+      const snapshot = data.gameSnapshot;
+      const currentRound = snapshot.round || 1;
+      
+      // Store all rounds
+      if (snapshot.rounds && Array.isArray(snapshot.rounds)) {
+        allRounds = snapshot.rounds;
+        console.log('[CoordX Pro] Stored', allRounds.length, 'rounds');
+      }
+
+      // Get current round coords
+      if (snapshot.rounds && snapshot.rounds[currentRound - 1]) {
+        const r = snapshot.rounds[currentRound - 1];
+        if (isValidCoord(r.lat, r.lng)) {
+          currentRoundIndex = currentRound - 1;
+          processAndSendCoords(r.lat, r.lng, 'geoguessr_api_round' + currentRound);
+        }
+      }
+    }
+
+    // Check for rounds array directly
+    if (data.rounds && Array.isArray(data.rounds)) {
+      data.rounds.forEach((r, i) => {
+        if (isValidCoord(r.lat, r.lng)) {
+          processAndSendCoords(r.lat, r.lng, 'geoguessr_rounds_' + (i + 1));
+        }
+      });
+    }
+
+    // Single location
+    if (isValidCoord(data.lat, data.lng)) {
+      processAndSendCoords(data.lat, data.lng, 'geoguessr_single');
+    }
+
+  } catch (e) {
+    console.warn('[CoordX Pro] Failed to parse response:', e.message);
+  }
+}
+
+// Use declarativeNetRequest or webRequest to intercept responses
+// Note: In MV3, we can't easily read response bodies with webRequest
+// So we need to inject content script to do network interception
+
 /* ─── Message Handling ────────────────────────────────── */
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -85,6 +162,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'resetSearch':
       lastCoords = null;
+      allRounds = [];
+      currentRoundIndex = 0;
       chrome.storage.local.remove(['lastCoords', 'lastAddress']);
       console.log('[CoordX Pro] Search reset');
       sendResponse({ success: true });
@@ -92,9 +171,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'getStatus':
       sendResponse({
-        searching: true, // Always searching
+        searching: true,
         trackingEnabled,
-        lastCoords
+        lastCoords,
+        allRoundsCount: allRounds.length,
+        currentRound: currentRoundIndex + 1
       });
       break;
 
@@ -111,7 +192,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'contentCoords':
-      // ALWAYS accept coordinates from content script
       const { lat, lng, source } = message;
 
       if (!isValidCoord(lat, lng)) {
@@ -120,29 +200,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
-      // Check if this is a new location
-      const isNew = isDifferentCoord(lat, lng);
-
-      if (isNew) {
-        console.log(`[CoordX Pro] ✅ NEW COORDS from ${source}:`, lat, lng);
-        lastCoords = { lat, lng };
-        chrome.storage.local.set({ lastCoords: { lat, lng } });
-
-        // Notify sidepanel
-        chrome.runtime.sendMessage({
-          type: 'coordFound',
-          lat,
-          lng,
-          source
-        }).catch(() => {});
-
-        sendResponse({ success: true, isNew: true });
-      } else {
-        sendResponse({ success: true, isNew: false });
+      // If source indicates a round number, use that
+      if (source && source.includes('_r') || source.includes('round')) {
+        const roundMatch = source.match(/r?(\d+)/);
+        if (roundMatch) {
+          const round = parseInt(roundMatch[1]);
+          if (round - 1 !== currentRoundIndex) {
+            currentRoundIndex = round - 1;
+            lastCoords = null; // Force new coords
+          }
+        }
       }
+
+      processAndSendCoords(lat, lng, source);
+      sendResponse({ success: true, isNew: isDifferentCoord(lat, lng) });
+      break;
+
+    case 'geoGuessrRounds':
+      // Store all rounds from content script
+      if (message.rounds && Array.isArray(message.rounds)) {
+        allRounds = message.rounds;
+        currentRoundIndex = message.currentRound || 0;
+        console.log('[CoordX Pro] Received', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
+        
+        // Send current round coords
+        if (allRounds[currentRoundIndex]) {
+          const r = allRounds[currentRoundIndex];
+          processAndSendCoords(r.lat, r.lng, 'geoguessr_stored_round' + (currentRoundIndex + 1));
+        }
+      }
+      sendResponse({ success: true });
+      break;
+
+    case 'advanceRound':
+      if (currentRoundIndex < allRounds.length - 1) {
+        currentRoundIndex++;
+        console.log('[CoordX Pro] Advanced to round', currentRoundIndex + 1);
+        lastCoords = null; // Force new coords
+        
+        if (allRounds[currentRoundIndex]) {
+          const r = allRounds[currentRoundIndex];
+          processAndSendCoords(r.lat, r.lng, 'geoguessr_advanced_round' + (currentRoundIndex + 1));
+        }
+      }
+      sendResponse({ success: true, currentRound: currentRoundIndex + 1 });
       break;
 
     default:
       break;
   }
 });
+
+/* ─── Debug: Log when content script connects ──────────── */
+
+console.log('[CoordX Pro] Background v1.3.0 ready');
