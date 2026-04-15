@@ -104,8 +104,10 @@
         return `<div class="log-entry ${className}"><span class="log-time">${time}</span> ${msg}</div>`;
       }).join('');
       
-      // Auto-scroll to bottom
-      els.logsContent.scrollTop = els.logsContent.scrollHeight;
+      // Auto-scroll to bottom only if enabled
+      if (autoScrollEnabled) {
+        els.logsContent.scrollTop = els.logsContent.scrollHeight;
+      }
     } catch (e) {
       console.error('[CoordX Pro] Failed to load logs:', e);
     }
@@ -117,6 +119,8 @@
     return div.innerHTML;
   }
 
+  let autoScrollEnabled = false;
+
   // Toggle logs visibility
   els.logsToggle.addEventListener('click', () => {
     logsVisible = !logsVisible;
@@ -124,6 +128,12 @@
     if (logsVisible) {
       loadLogs();
     }
+  });
+
+  // Toggle auto-scroll
+  els.logsContent.addEventListener('click', () => {
+    autoScrollEnabled = !autoScrollEnabled;
+    els.logsContent.style.borderColor = autoScrollEnabled ? 'var(--success)' : 'var(--border-color)';
   });
 
   // Refresh logs button
