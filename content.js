@@ -433,6 +433,8 @@
 
   /* ─── Main Init ─────────────────────────────────────── */
 
+  let lastUrl = window.location.href;
+
   function init() {
     const hostname = window.location.hostname;
     log('🎮 Site:', hostname);
@@ -454,6 +456,24 @@
 
       // Send initial coords
       setTimeout(() => sendCurrentRoundCoords('init'), 1000);
+      
+      // Watch for URL changes (SPA navigation)
+      setInterval(() => {
+        if (window.location.href !== lastUrl) {
+          log('🔄 URL changed:', lastUrl, '->', window.location.href);
+          lastUrl = window.location.href;
+          
+          // Reset state for new game
+          allRounds = [];
+          currentRoundIndex = 0;
+          lastSentRound = -1;
+          
+          // Parse new game data
+          parseNextData();
+          setTimeout(parseNextData, 500);
+          setTimeout(parseNextData, 1500);
+        }
+      }, 500);
     }
 
     if (hostname.includes('worldguessr.com')) {
