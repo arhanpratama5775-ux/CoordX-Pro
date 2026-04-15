@@ -1,9 +1,9 @@
 /**
- * CoordX Pro — Content Script (v1.2.5)
+ * CoordX Pro — Content Script (v1.2.6)
  *
  * Supports:
  * - WorldGuessr (iframe URL detection)
- * - GeoGuessr (Store all rounds + detect round from URL/DOM/API)
+ * - GeoGuessr (Store rounds + detect button clicks for round changes)
  */
 
 (function () {
@@ -12,7 +12,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.2.5 loaded on:', window.location.href);
+  console.log('[CoordX Pro] 🚀 Content script v1.2.6 loaded on:', window.location.href);
 
   function isValidCoord(lat, lng) {
     return (
@@ -29,7 +29,6 @@
   let lastIframeSrc = null;
   let allRounds = []; // Store ALL rounds from initial load
   let currentRoundIndex = 0; // Track current round (0-indexed)
-  let lastUrl = window.location.href;
 
   function sendCoords(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return;
@@ -38,9 +37,7 @@
         Math.abs(lastSentCoords.lat - lat) > 0.0001 ||
         Math.abs(lastSentCoords.lng - lng) > 0.0001;
 
-    if (!isDifferent) {
-      return;
-    }
+    if (!isDifferent) return;
 
     lastSentCoords = { lat, lng };
     console.log('[CoordX Pro] ✅ SENDING COORDS:', lat, lng, 'via', source);
@@ -55,20 +52,31 @@
     } catch (e) {}
   }
 
-  /* ─── GeoGuessr: Store rounds and detect current round ─── */
+  // Force send (reset lastSentCoords first)
+  function forceSendCoords(lat, lng, source) {
+    lastSentCoords = null;
+    sendCoords(lat, lng, source);
+  }
+
+  /* ─── GeoGuessr: Store rounds and detect round changes ─── */
 
   function loadAllRoundsFromNextData() {
     const script = document.getElementById('__NEXT_DATA__');
-    if (!script) return false;
+    if (!script) {
+      console.log('[CoordX Pro] No __NEXT_DATA__');
+      return false;
+    }
 
     try {
       const data = JSON.parse(script.textContent);
       const props = data.props?.pageProps;
 
-      if (!props?.gameSnapshot?.rounds) return false;
+      if (!props?.gameSnapshot?.rounds) {
+        console.log('[CoordX Pro] No rounds in gameSnapshot');
+        return false;
+      }
 
       const rounds = props.gameSnapshot.rounds;
-      const startRound = props.gameSnapshot.round || 1;
 
       // Store all rounds
       allRounds = rounds.map(r => ({
@@ -77,75 +85,51 @@
         panoId: r.panoId
       })).filter(r => isValidCoord(r.lat, r.lng));
 
-      currentRoundIndex = startRound - 1; // 0-indexed
+      console.log('[CoordX Pro] ✅ Loaded', allRounds.length, 'rounds');
 
-      console.log('[CoordX Pro] Loaded', allRounds.length, 'rounds, starting at', startRound);
-
-      // Send first round
-      if (allRounds[currentRoundIndex]) {
-        sendCoords(allRounds[currentRoundIndex].lat, allRounds[currentRoundIndex].lng, 'geoguessr_init_r' + (currentRoundIndex + 1));
-      }
+      // Send first round immediately
+      sendCurrentRound('init');
 
       return true;
     } catch (e) {
-      console.warn('[CoordX Pro] Failed to parse __NEXT_DATA__:', e.message);
+      console.warn('[CoordX Pro] Parse error:', e.message);
     }
 
     return false;
   }
 
-  // Detect round from URL pattern or DOM
-  function detectCurrentRound() {
-    const url = window.location.href;
-    
-    // Check URL for round indicator
-    const roundMatch = url.match(/round[\/=_](\d+)/i);
-    if (roundMatch) {
-      return parseInt(roundMatch[1]) - 1; // 0-indexed
-    }
-
-    // Check DOM for round counter (GeoGuessr shows "Round 2/5" etc)
-    const roundTexts = document.querySelectorAll('[class*="round"], [class*="Round"]');
-    for (const el of roundTexts) {
-      const text = el.textContent || el.innerText;
-      const match = text.match(/(\d+)\s*[\/\|]\s*\d+/);
-      if (match) {
-        return parseInt(match[1]) - 1; // 0-indexed
-      }
-    }
-
-    // Check for round indicator in any visible text
-    const bodyText = document.body?.innerText || '';
-    const bodyMatch = bodyText.match(/round\s*(\d+)/i);
-    if (bodyMatch) {
-      return parseInt(bodyMatch[1]) - 1;
-    }
-
-    return currentRoundIndex; // Keep current if can't detect
-  }
-
-  // Check and send coords for current round
-  function checkAndSendCurrentRound() {
+  function sendCurrentRound(source) {
     if (allRounds.length === 0) {
-      loadAllRoundsFromNextData();
+      console.log('[CoordX Pro] No rounds loaded yet');
       return;
     }
 
-    const detectedRound = detectCurrentRound();
-    
-    if (detectedRound !== currentRoundIndex && detectedRound >= 0 && detectedRound < allRounds.length) {
-      console.log('[CoordX Pro] Round changed:', currentRoundIndex + 1, '->', detectedRound + 1);
-      currentRoundIndex = detectedRound;
-      lastSentCoords = null; // Reset to allow new coords
+    const round = allRounds[currentRoundIndex];
+    if (round) {
+      console.log('[CoordX Pro] 📍 Sending round', currentRoundIndex + 1, ':', round.lat, round.lng);
+      forceSendCoords(round.lat, round.lng, 'geoguessr_' + source + '_r' + (currentRoundIndex + 1));
     }
+  }
 
-    // Send current round coords
-    if (allRounds[currentRoundIndex]) {
-      sendCoords(
-        allRounds[currentRoundIndex].lat, 
-        allRounds[currentRoundIndex].lng, 
-        'geoguessr_r' + (currentRoundIndex + 1)
-      );
+  function nextRound() {
+    if (currentRoundIndex < allRounds.length - 1) {
+      currentRoundIndex++;
+      console.log('[CoordX Pro] ➡️ Next round:', currentRoundIndex + 1);
+      sendCurrentRound('next');
+    }
+  }
+
+  // Check if we should advance to next round based on user actions
+  function checkForRoundAdvance() {
+    // Look for "Play again" or round completion indicators
+    const bodyText = document.body?.innerText || '';
+    
+    // Check for game over screen
+    if (bodyText.toLowerCase().includes('game over') || 
+        bodyText.toLowerCase().includes('play again') ||
+        bodyText.toLowerCase().includes('final score')) {
+      console.log('[CoordX Pro] Game over detected');
+      return;
     }
   }
 
@@ -206,7 +190,7 @@
   if (window.__coordxPageInjected) return;
   window.__coordxPageInjected = true;
 
-  console.log('[CoordX Pro] Page script v1.2.5 injected');
+  console.log('[CoordX Pro] Page script v1.2.6 injected');
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -229,21 +213,21 @@
       const snapshot = data.gameSnapshot;
       const currentRound = snapshot.round || 1;
       
-      // Send current round
+      // Send ALL rounds with their indices
+      if (snapshot.rounds) {
+        snapshot.rounds.forEach((r, i) => {
+          if (isValidCoord(r.lat, r.lng)) {
+            sendCoords(r.lat, r.lng, 'api', i + 1);
+          }
+        });
+      }
+      
+      // Also send current round specifically
       if (snapshot.rounds && snapshot.rounds[currentRound - 1]) {
         const r = snapshot.rounds[currentRound - 1];
         if (isValidCoord(r.lat, r.lng)) {
           sendCoords(r.lat, r.lng, 'api_current', currentRound);
         }
-      }
-      
-      // Also send ALL rounds with their indices
-      if (snapshot.rounds) {
-        snapshot.rounds.forEach((r, i) => {
-          if (isValidCoord(r.lat, r.lng)) {
-            sendCoords(r.lat, r.lng, 'api_all', i + 1);
-          }
-        });
       }
     }
     
@@ -251,7 +235,7 @@
     if (data.rounds && Array.isArray(data.rounds)) {
       data.rounds.forEach((r, i) => {
         if (isValidCoord(r.lat, r.lng)) {
-          sendCoords(r.lat, r.lng, 'rounds_array', i + 1);
+          sendCoords(r.lat, r.lng, 'rounds', i + 1);
         }
       });
     }
@@ -268,26 +252,15 @@
     try {
       const data = JSON.parse(text);
       processGeoGuessrResponse(data, url);
-    } catch (e) {
-      // Regex fallback
-      const match = text.match(/"lat"\\s*:\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*"lng"\\s*:\\s*(-?\\d{1,3}\\.\\d{4,})/);
-      if (match) {
-        const lat = parseFloat(match[1]);
-        const lng = parseFloat(match[2]);
-        if (isValidCoord(lat, lng)) {
-          sendCoords(lat, lng, 'regex', null);
-        }
-      }
-    }
+    } catch (e) {}
   }
 
-  // Hook fetch - check ALL URLs
+  // Hook fetch
   const _fetch = window.fetch;
   window.fetch = async function(input, init) {
     const url = typeof input === 'string' ? input : input?.url || '';
     const response = await _fetch.apply(this, arguments);
     
-    // Log and process geoguessr calls
     if (url.includes('geoguessr')) {
       console.log('[CoordX Pro] 🔍 Fetch:', url);
       try {
@@ -330,24 +303,82 @@
   window.addEventListener('__coordx_coords', (event) => {
     const { lat, lng, source, round } = event.detail;
     
-    // If round is specified and we have allRounds, use it to validate
+    // If we get a round from API that's higher than current, advance
     if (round && allRounds.length > 0) {
       const roundIdx = round - 1;
-      if (roundIdx !== currentRoundIndex && roundIdx < allRounds.length) {
-        console.log('[CoordX Pro] API says round', round);
+      if (roundIdx > currentRoundIndex && roundIdx < allRounds.length) {
         currentRoundIndex = roundIdx;
-        lastSentCoords = null;
+        forceSendCoords(lat, lng, source + '_r' + round);
+        return;
       }
     }
     
     sendCoords(lat, lng, source);
   });
 
+  /* ─── Click Listener for Round Navigation ─────────────── */
+
+  function setupClickListener() {
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      const text = (target.innerText || target.textContent || '').toLowerCase();
+      const className = (target.className || '').toLowerCase();
+      const parentText = (target.parentElement?.innerText || '').toLowerCase();
+      
+      // Check for "next round" or similar buttons
+      const isNextButton = 
+        text.includes('next') ||
+        text.includes('continue') ||
+        text.includes('next round') ||
+        text.includes('play') ||
+        className.includes('next') ||
+        className.includes('continue') ||
+        parentText.includes('next') ||
+        parentText.includes('continue');
+
+      if (isNextButton && allRounds.length > 0) {
+        console.log('[CoordX Pro] 🖱️ Click detected on:', text || className);
+        
+        // Wait a bit for the game state to update
+        setTimeout(() => {
+          // Try to detect if we should go to next round
+          nextRound();
+        }, 500);
+        setTimeout(() => {
+          sendCurrentRound('click_check');
+        }, 1000);
+        setTimeout(() => {
+          sendCurrentRound('click_check2');
+        }, 2000);
+      }
+    }, true);
+  }
+
+  /* ─── Keyboard Listener (Space/Enter to advance) ─────── */
+
+  function setupKeyboardListener() {
+    document.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && allRounds.length > 0) {
+        setTimeout(() => {
+          sendCurrentRound('keyboard');
+        }, 500);
+        setTimeout(() => {
+          sendCurrentRound('keyboard2');
+        }, 1000);
+      }
+    }, true);
+  }
+
   /* ─── Initialization ──────────────────────────────────── */
 
   function init() {
-    console.log('[CoordX Pro] Initializing v1.2.5...');
+    console.log('[CoordX Pro] Initializing v1.2.6...');
     injectPageScript();
+    
+    // Load rounds immediately
+    if (document.readyState === 'complete') {
+      loadAllRoundsFromNextData();
+    }
   }
 
   function setupObservers() {
@@ -355,30 +386,51 @@
 
     // GeoGuessr setup
     if (hostname.includes('geoguessr.com')) {
-      // Load rounds immediately and after delays
+      // Load rounds at various times
       loadAllRoundsFromNextData();
+      setTimeout(loadAllRoundsFromNextData, 100);
       setTimeout(loadAllRoundsFromNextData, 500);
       setTimeout(loadAllRoundsFromNextData, 1000);
       setTimeout(loadAllRoundsFromNextData, 2000);
 
-      // Check for round changes periodically
-      setInterval(checkAndSendCurrentRound, 500);
+      // Setup click and keyboard listeners
+      setupClickListener();
+      setupKeyboardListener();
 
-      // Watch DOM for changes (round indicator might update)
+      // Periodically send current round coords
+      setInterval(() => {
+        if (allRounds.length > 0) {
+          sendCurrentRound('periodic');
+        }
+      }, 2000);
+
+      // Watch for URL changes (new game)
+      let lastUrl = window.location.href;
+      setInterval(() => {
+        if (window.location.href !== lastUrl) {
+          lastUrl = window.location.href;
+          console.log('[CoordX Pro] URL changed, resetting...');
+          allRounds = [];
+          currentRoundIndex = 0;
+          lastSentCoords = null;
+          loadAllRoundsFromNextData();
+        }
+      }, 300);
+
+      // DOM observer for game state changes
       const observer = new MutationObserver(() => {
-        checkAndSendCurrentRound();
+        // Just periodically, don't spam
       });
       
       if (document.body) {
         observer.observe(document.body, {
           childList: true,
-          subtree: true,
-          characterData: true
+          subtree: true
         });
       }
     }
 
-    // WorldGuessr - Iframe monitoring
+    // WorldGuessr
     if (hostname.includes('worldguessr.com')) {
       const observer = new MutationObserver(() => {
         checkIframe();
@@ -395,20 +447,6 @@
 
       setInterval(checkIframe, 500);
     }
-
-    // URL change detection
-    setInterval(() => {
-      if (window.location.href !== lastUrl) {
-        lastUrl = window.location.href;
-        console.log('[CoordX Pro] URL changed:', lastUrl);
-        lastSentCoords = null;
-        currentRoundIndex = 0;
-        
-        if (hostname.includes('geoguessr.com')) {
-          loadAllRoundsFromNextData();
-        }
-      }
-    }, 300);
   }
 
   if (document.readyState === 'loading') {
