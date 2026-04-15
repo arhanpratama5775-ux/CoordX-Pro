@@ -1,8 +1,9 @@
 /**
- * CoordX Pro — Background Service Worker (v1.1.3)
+ * CoordX Pro — Background Service Worker (v1.2.2)
  * 
  * SUPER AGGRESSIVE - Always accepts new coordinates
  * No more blocking on searching flag
+ * Supports round change detection for GeoGuessr
  */
 
 /* ─── State ─────────────────────────────────────────────── */

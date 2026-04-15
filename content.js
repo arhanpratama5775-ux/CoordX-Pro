@@ -1,9 +1,9 @@
 /**
- * CoordX Pro — Content Script (v1.2.0)
+ * CoordX Pro — Content Script (v1.2.2)
  *
  * Supports:
  * - WorldGuessr (iframe URL detection)
- * - GeoGuessr (__NEXT_DATA__ parsing + network hooks)
+ * - GeoGuessr (__NEXT_DATA__ parsing + network hooks + round detection)
  */
 
 (function () {
@@ -12,7 +12,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.2.0 loaded on:', window.location.href);
+  console.log('[CoordX Pro] 🚀 Content script v1.2.2 loaded on:', window.location.href);
 
   function isValidCoord(lat, lng) {
     return (
@@ -27,6 +27,8 @@
 
   let lastSentCoords = null;
   let lastIframeSrc = null;
+  let lastRoundNum = -1; // Track GeoGuessr round changes
+  let geoGuessrRounds = null; // Store all rounds data
 
   function sendCoords(lat, lng, source) {
     const isDifferent = !lastSentCoords || 
@@ -53,36 +55,45 @@
   function parseGeoGuessrNextData() {
     const script = document.getElementById('__NEXT_DATA__');
     if (!script) {
-      console.log('[CoordX Pro] No __NEXT_DATA__ found');
       return null;
     }
 
     try {
       const data = JSON.parse(script.textContent);
-      console.log('[CoordX Pro] __NEXT_DATA__ parsed');
-
-      // Check for rounds array (challenge/game mode)
       const props = data.props?.pageProps;
-      if (props?.gameSnapshot?.rounds) {
-        const rounds = props.gameSnapshot.rounds;
-        const currentRound = props.gameSnapshot.round - 1; // round is 1-indexed
+
+      if (!props?.gameSnapshot) {
+        return null;
+      }
+
+      const snapshot = props.gameSnapshot;
+      const rounds = snapshot.rounds;
+      const currentRound = snapshot.round || 1; // 1-indexed
+
+      // Store rounds for later use
+      if (rounds && rounds.length > 0) {
+        geoGuessrRounds = rounds;
+        console.log('[CoordX Pro] GeoGuessr rounds loaded:', rounds.length, 'current round:', currentRound);
+      }
+
+      // Get coordinates for current round
+      if (rounds && rounds[currentRound - 1]) {
+        const roundData = rounds[currentRound - 1];
+        const lat = roundData.lat;
+        const lng = roundData.lng;
         
-        if (rounds[currentRound]) {
-          const lat = rounds[currentRound].lat;
-          const lng = rounds[currentRound].lng;
-          if (isValidCoord(lat, lng)) {
-            console.log('[CoordX Pro] GeoGuessr coords from __NEXT_DATA__:', lat, lng);
-            return { lat, lng };
-          }
+        if (isValidCoord(lat, lng)) {
+          console.log('[CoordX Pro] GeoGuessr current round', currentRound, 'coords:', lat, lng);
+          return { lat, lng, round: currentRound };
         }
       }
 
-      // Alternative: check gameSnapshot directly
-      if (props?.gameSnapshot?.rounds?.[0]) {
-        const lat = props.gameSnapshot.rounds[0].lat;
-        const lng = props.gameSnapshot.rounds[0].lng;
+      // Fallback: try first round
+      if (rounds && rounds[0]) {
+        const lat = rounds[0].lat;
+        const lng = rounds[0].lng;
         if (isValidCoord(lat, lng)) {
-          return { lat, lng };
+          return { lat, lng, round: 1 };
         }
       }
 
@@ -91,6 +102,19 @@
     }
 
     return null;
+  }
+
+  // Check if round changed and send new coords
+  function checkGeoGuessrRound() {
+    const result = parseGeoGuessrNextData();
+    if (result && result.round !== lastRoundNum) {
+      console.log('[CoordX Pro] Round changed from', lastRoundNum, 'to', result.round);
+      lastRoundNum = result.round;
+      lastSentCoords = null; // Reset to allow new coords
+      sendCoords(result.lat, result.lng, 'geoguessr_round_' + result.round);
+      return true;
+    }
+    return false;
   }
 
   /* ─── WorldGuessr: Iframe URL Detection ────────────────── */
@@ -147,9 +171,7 @@
 
     // GeoGuessr detection
     if (hostname.includes('geoguessr.com')) {
-      const coords = parseGeoGuessrNextData();
-      if (coords) {
-        sendCoords(coords.lat, coords.lng, 'geoguessr_nextdata');
+      if (checkGeoGuessrRound()) {
         return true;
       }
     }
@@ -173,9 +195,10 @@
   if (window.__coordxPageInjected) return;
   window.__coordxPageInjected = true;
 
-  console.log('[CoordX Pro] Page script v1.2.0 injected');
+  console.log('[CoordX Pro] Page script v1.2.2 injected');
 
   let lastCoords = null;
+  let lastRound = -1;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -185,7 +208,14 @@
       Math.abs(lat) > 0.001 && Math.abs(lng) > 0.001;
   }
 
-  function sendCoords(lat, lng, source) {
+  function sendCoords(lat, lng, source, round) {
+    // If round changed, always send
+    if (round !== undefined && round !== lastRound) {
+      lastRound = round;
+      lastCoords = null; // Reset
+      console.log('[CoordX Pro] Round changed to', round);
+    }
+
     if (lastCoords &&
         Math.abs(lastCoords.lat - lat) < 0.0001 &&
         Math.abs(lastCoords.lng - lng) < 0.0001) {
@@ -193,25 +223,64 @@
     }
     lastCoords = { lat, lng };
 
-    console.log('[CoordX Pro] Page script found coords:', lat, lng, 'via', source);
+    console.log('[CoordX Pro] Page script found coords:', lat, lng, 'via', source, 'round:', round);
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
-      detail: { lat, lng, source }
+      detail: { lat, lng, source, round }
     }));
   }
 
-  function parseCoordsFromText(text) {
+  // Parse GeoGuessr specific API responses
+  function parseGeoGuessrResponse(data, url) {
+    // Game snapshot format
+    if (data.gameSnapshot) {
+      const snapshot = data.gameSnapshot;
+      const rounds = snapshot.rounds;
+      const currentRound = snapshot.round || 1;
+
+      if (rounds && rounds[currentRound - 1]) {
+        const r = rounds[currentRound - 1];
+        if (isValidCoord(r.lat, r.lng)) {
+          return { lat: r.lat, lng: r.lng, round: currentRound };
+        }
+      }
+    }
+
+    // Direct rounds array
+    if (data.rounds && Array.isArray(data.rounds)) {
+      const round = data.round || data.currentRound || 1;
+      if (data.rounds[round - 1]) {
+        const r = data.rounds[round - 1];
+        if (isValidCoord(r.lat, r.lng)) {
+          return { lat: r.lat, lng: r.lng, round: round };
+        }
+      }
+    }
+
+    // Single round data
+    if (data.lat !== undefined && data.lng !== undefined) {
+      if (isValidCoord(data.lat, data.lng)) {
+        return { lat: data.lat, lng: data.lng };
+      }
+    }
+
+    return null;
+  }
+
+  function parseCoordsFromText(text, url) {
     if (!text) return null;
 
-    // Try JSON parse and find coords
     try {
       const data = JSON.parse(text);
       
-      // Look for lat/lng in various formats
+      // First try GeoGuessr specific parsing
+      const ggResult = parseGeoGuessrResponse(data, url);
+      if (ggResult) return ggResult;
+      
+      // Generic parsing
       const find = (obj, depth = 0) => {
         if (depth > 15 || !obj) return null;
 
         if (Array.isArray(obj)) {
-          // Look for [lat, lng] pair
           for (let i = 0; i < obj.length - 1; i++) {
             const lat = parseFloat(obj[i]);
             const lng = parseFloat(obj[i + 1]);
@@ -226,13 +295,11 @@
         }
 
         if (typeof obj === 'object' && obj !== null) {
-          // Check for explicit lat/lng keys
           const lat = obj.lat ?? obj.latitude ?? obj.y;
           const lng = obj.lng ?? obj.lon ?? obj.longitude ?? obj.x;
           if (typeof lat === 'number' && typeof lng === 'number' && isValidCoord(lat, lng)) {
             return { lat, lng };
           }
-          // Check for location object
           if (obj.location && typeof obj.location === 'object') {
             const locLat = obj.location.lat ?? obj.location.latitude;
             const locLng = obj.location.lng ?? obj.location.lon ?? obj.location.longitude;
@@ -240,7 +307,6 @@
               return { lat: locLat, lng: locLng };
             }
           }
-          // Recurse
           for (const v of Object.values(obj)) {
             const r = find(v, depth + 1);
             if (r) return r;
@@ -254,9 +320,9 @@
 
     // Regex for coordinate patterns
     const patterns = [
-      /"lat"\s*:\s*(-?\d{1,2}\.\d{3,})\s*,\s*"lng"\s*:\s*(-?\d{1,3}\.\d{3,})/,
-      /"latitude"\s*:\s*(-?\d{1,2}\.\d{3,})\s*,\s*"longitude"\s*:\s*(-?\d{1,3}\.\d{3,})/,
-      /\[\s*(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{1,3}\.\d{4,})\s*\]/
+      /"lat"\\s*:\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*"lng"\\s*:\\s*(-?\\d{1,3}\\.\\d{3,})/,
+      /"latitude"\\s*:\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*"longitude"\\s*:\\s*(-?\\d{1,3}\\.\\d{3,})/,
+      /\\[\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*(-?\\d{1,3}\\.\\d{4,})\\s*\\]/
     ];
 
     for (const pattern of patterns) {
@@ -277,14 +343,31 @@
     const url = typeof input === 'string' ? input : input?.url || '';
     const response = await _fetch.apply(this, arguments);
     
-    // Only check relevant URLs
-    if (url.includes('geoguessr') || url.includes('google') || url.includes('maps') || url.includes('geo')) {
+    // Check GeoGuessr specific endpoints
+    if (url.includes('geoguessr.com') && (
+        url.includes('/api/') ||
+        url.includes('game-snapshot') ||
+        url.includes('games') ||
+        url.includes('round')
+    )) {
       try {
         const cloned = response.clone();
         const text = await cloned.text();
-        const coords = parseCoordsFromText(text);
-        if (coords) {
-          sendCoords(coords.lat, coords.lng, 'fetch_' + url.split('?')[0].split('/').pop());
+        const result = parseCoordsFromText(text, url);
+        if (result) {
+          const source = 'geoguessr_api';
+          sendCoords(result.lat, result.lng, source, result.round);
+        }
+      } catch {}
+    }
+    // Also check maps/geo related
+    else if (url.includes('google') || url.includes('maps') || url.includes('geo')) {
+      try {
+        const cloned = response.clone();
+        const text = await cloned.text();
+        const result = parseCoordsFromText(text, url);
+        if (result) {
+          sendCoords(result.lat, result.lng, 'fetch_' + url.split('?')[0].split('/').pop(), result.round);
         }
       } catch {}
     }
@@ -303,13 +386,45 @@
     const xhr = this;
     xhr.addEventListener('load', function() {
       try {
-        const coords = parseCoordsFromText(xhr.responseText);
-        if (coords) sendCoords(coords.lat, coords.lng, 'xhr');
+        const result = parseCoordsFromText(xhr.responseText, xhr._url);
+        if (result) {
+          sendCoords(result.lat, result.lng, 'xhr', result.round);
+        }
       } catch {}
     });
     return _send.apply(this, arguments);
   };
 
+  // Monitor __NEXT_DATA__ changes for GeoGuessr
+  function monitorNextData() {
+    const checkNextData = () => {
+      const script = document.getElementById('__NEXT_DATA__');
+      if (!script) return;
+
+      try {
+        const data = JSON.parse(script.textContent);
+        const props = data.props?.pageProps;
+        if (!props?.gameSnapshot) return;
+
+        const snapshot = props.gameSnapshot;
+        const rounds = snapshot.rounds;
+        const currentRound = snapshot.round || 1;
+
+        if (rounds && rounds[currentRound - 1]) {
+          const r = rounds[currentRound - 1];
+          if (isValidCoord(r.lat, r.lng)) {
+            sendCoords(r.lat, r.lng, 'nextdata_monitor', currentRound);
+          }
+        }
+      } catch {}
+    };
+
+    // Check periodically
+    setInterval(checkNextData, 500);
+    checkNextData();
+  }
+
+  monitorNextData();
   console.log('[CoordX Pro] Network hooks installed');
 })();
 `;
@@ -320,7 +435,15 @@
 
   // Listen for coordinates from page script
   window.addEventListener('__coordx_coords', (event) => {
-    const { lat, lng, source } = event.detail;
+    const { lat, lng, source, round } = event.detail;
+    
+    // If round changed, reset lastSentCoords
+    if (round !== undefined && round !== lastRoundNum) {
+      console.log('[CoordX Pro] Round change detected via page script:', round);
+      lastRoundNum = round;
+      lastSentCoords = null;
+    }
+    
     sendCoords(lat, lng, source);
   });
 
@@ -330,7 +453,7 @@
     console.log('[CoordX Pro] Initializing...');
     injectPageScript();
     
-    // Initial detection
+    // Initial detection with delays
     setTimeout(detectCoordinates, 500);
     setTimeout(detectCoordinates, 1000);
     setTimeout(detectCoordinates, 2000);
@@ -357,19 +480,26 @@
         lastUrl = window.location.href;
         console.log('[CoordX Pro] URL changed, re-detecting...');
         lastSentCoords = null; // Reset to allow new coords
+        lastRoundNum = -1; // Reset round tracking
         setTimeout(detectCoordinates, 500);
         setTimeout(detectCoordinates, 1000);
       }
-    }, 500);
+    }, 300);
 
     // Click listener (new rounds often triggered by clicks)
     document.addEventListener('click', () => {
       setTimeout(detectCoordinates, 200);
       setTimeout(detectCoordinates, 500);
+      setTimeout(detectCoordinates, 1000);
     });
 
-    // Periodic check
-    setInterval(detectCoordinates, 1000);
+    // Periodic check for GeoGuessr round changes
+    setInterval(() => {
+      const hostname = window.location.hostname;
+      if (hostname.includes('geoguessr.com')) {
+        checkGeoGuessrRound();
+      }
+    }, 500);
   }
 
   if (document.readyState === 'loading') {
