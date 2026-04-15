@@ -120,23 +120,18 @@ function processAndSendCoords(lat, lng, source) {
     return;
   }
 
-  const isNew = isDifferentCoord(lat, lng);
+  // ALWAYS update and send - user might be on a new round
+  log(`✅ COORDS from ${source}:`, lat.toFixed(4), lng.toFixed(4));
+  lastCoords = { lat, lng };
+  chrome.storage.local.set({ lastCoords: { lat, lng } });
 
-  if (isNew) {
-    log(`✅ NEW COORDS from ${source}:`, lat, lng);
-    lastCoords = { lat, lng };
-    chrome.storage.local.set({ lastCoords: { lat, lng } });
-
-    // Notify sidepanel
-    chrome.runtime.sendMessage({
-      type: 'coordFound',
-      lat,
-      lng,
-      source
-    }).catch(() => {});
-  } else {
-    log(`📍 Same coords from ${source}:`, lat, lng);
-  }
+  // Notify sidepanel
+  chrome.runtime.sendMessage({
+    type: 'coordFound',
+    lat,
+    lng,
+    source
+  }).catch(() => {});
 }
 
 /* ─── GeoGuessr API Interception via webRequest ─────────── */

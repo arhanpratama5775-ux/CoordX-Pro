@@ -46,7 +46,10 @@
 
   function sendCoords(lat, lng, source) {
     const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-    if (key === lastSentCoords) return; // Don't send same coords twice
+    if (key === lastSentCoords) {
+      // Skip sending same coords - but log it
+      return;
+    }
     lastSentCoords = key;
     
     log('📍', source, ':', lat.toFixed(4), lng.toFixed(4));
@@ -55,9 +58,13 @@
       chrome.runtime.sendMessage({
         type: 'contentCoords',
         lat, lng, source
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          log('❌ Send failed:', chrome.runtime.lastError.message);
+        }
       });
     } catch (e) {
-      log('❌ Send failed:', e.message);
+      log('❌ Send error:', e.message);
     }
   }
 
@@ -72,6 +79,9 @@
     const dataStr = script.textContent;
     if (dataStr === lastDataStr) return false; // No change
     lastDataStr = dataStr;
+    
+    // Reset lastSentCoords when new data is loaded
+    lastSentCoords = '';
 
     try {
       const data = JSON.parse(dataStr);
