@@ -1,9 +1,9 @@
 /**
- * CoordX Pro — Content Script (v1.2.2)
+ * CoordX Pro — Content Script (v1.2.3)
  *
  * Supports:
  * - WorldGuessr (iframe URL detection)
- * - GeoGuessr (__NEXT_DATA__ parsing + network hooks + round detection)
+ * - GeoGuessr (AGGRESSIVE network hooks + API monitoring)
  */
 
 (function () {
@@ -12,7 +12,7 @@
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.2.2 loaded on:', window.location.href);
+  console.log('[CoordX Pro] 🚀 Content script v1.2.3 loaded on:', window.location.href);
 
   function isValidCoord(lat, lng) {
     return (
@@ -27,15 +27,15 @@
 
   let lastSentCoords = null;
   let lastIframeSrc = null;
-  let lastRoundNum = -1; // Track GeoGuessr round changes
-  let geoGuessrRounds = null; // Store all rounds data
+  let geoGuessrToken = null; // Store game token from URL
 
-  function sendCoords(lat, lng, source) {
+  // For GeoGuessr, we need to be more lenient - accept coords from API calls
+  function sendCoords(lat, lng, source, forceNew = false) {
     const isDifferent = !lastSentCoords || 
         Math.abs(lastSentCoords.lat - lat) > 0.0001 ||
         Math.abs(lastSentCoords.lng - lng) > 0.0001;
 
-    if (!isDifferent) return;
+    if (!isDifferent && !forceNew) return;
 
     lastSentCoords = { lat, lng };
     console.log('[CoordX Pro] ✅ SENDING COORDS:', lat, lng, 'via', source);
@@ -50,71 +50,40 @@
     } catch (e) {}
   }
 
-  /* ─── GeoGuessr: Parse __NEXT_DATA__ ───────────────────── */
+  // Force send new coords (for round changes)
+  function forceSendCoords(lat, lng, source) {
+    lastSentCoords = null; // Reset first
+    sendCoords(lat, lng, source, true);
+  }
+
+  /* ─── GeoGuessr: Parse __NEXT_DATA__ (initial load only) ─── */
 
   function parseGeoGuessrNextData() {
     const script = document.getElementById('__NEXT_DATA__');
-    if (!script) {
-      return null;
-    }
+    if (!script) return null;
 
     try {
       const data = JSON.parse(script.textContent);
       const props = data.props?.pageProps;
 
-      if (!props?.gameSnapshot) {
-        return null;
-      }
+      if (!props?.gameSnapshot) return null;
 
       const snapshot = props.gameSnapshot;
       const rounds = snapshot.rounds;
-      const currentRound = snapshot.round || 1; // 1-indexed
+      
+      // Store token for API calls
+      geoGuessrToken = snapshot.token;
 
-      // Store rounds for later use
+      // Get ALL rounds and store them
       if (rounds && rounds.length > 0) {
-        geoGuessrRounds = rounds;
-        console.log('[CoordX Pro] GeoGuessr rounds loaded:', rounds.length, 'current round:', currentRound);
+        console.log('[CoordX Pro] GeoGuessr rounds loaded:', rounds.length);
+        return rounds.map(r => ({ lat: r.lat, lng: r.lng }));
       }
-
-      // Get coordinates for current round
-      if (rounds && rounds[currentRound - 1]) {
-        const roundData = rounds[currentRound - 1];
-        const lat = roundData.lat;
-        const lng = roundData.lng;
-        
-        if (isValidCoord(lat, lng)) {
-          console.log('[CoordX Pro] GeoGuessr current round', currentRound, 'coords:', lat, lng);
-          return { lat, lng, round: currentRound };
-        }
-      }
-
-      // Fallback: try first round
-      if (rounds && rounds[0]) {
-        const lat = rounds[0].lat;
-        const lng = rounds[0].lng;
-        if (isValidCoord(lat, lng)) {
-          return { lat, lng, round: 1 };
-        }
-      }
-
     } catch (e) {
       console.warn('[CoordX Pro] Failed to parse __NEXT_DATA__:', e.message);
     }
 
     return null;
-  }
-
-  // Check if round changed and send new coords
-  function checkGeoGuessrRound() {
-    const result = parseGeoGuessrNextData();
-    if (result && result.round !== lastRoundNum) {
-      console.log('[CoordX Pro] Round changed from', lastRoundNum, 'to', result.round);
-      lastRoundNum = result.round;
-      lastSentCoords = null; // Reset to allow new coords
-      sendCoords(result.lat, result.lng, 'geoguessr_round_' + result.round);
-      return true;
-    }
-    return false;
   }
 
   /* ─── WorldGuessr: Iframe URL Detection ────────────────── */
@@ -164,26 +133,6 @@
     return false;
   }
 
-  /* ─── Main Detection Logic ────────────────────────────── */
-
-  function detectCoordinates() {
-    const hostname = window.location.hostname;
-
-    // GeoGuessr detection
-    if (hostname.includes('geoguessr.com')) {
-      if (checkGeoGuessrRound()) {
-        return true;
-      }
-    }
-
-    // WorldGuessr detection
-    if (hostname.includes('worldguessr.com')) {
-      return checkIframe();
-    }
-
-    return false;
-  }
-
   /* ─── Inject Page Script for Network Hooks ────────────── */
 
   function injectPageScript() {
@@ -195,10 +144,10 @@
   if (window.__coordxPageInjected) return;
   window.__coordxPageInjected = true;
 
-  console.log('[CoordX Pro] Page script v1.2.2 injected');
+  console.log('[CoordX Pro] Page script v1.2.3 injected - AGGRESSIVE MODE');
 
-  let lastCoords = null;
-  let lastRound = -1;
+  let lastSentTime = 0;
+  const COOLDOWN = 2000; // 2 second cooldown for same coords
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -208,168 +157,149 @@
       Math.abs(lat) > 0.001 && Math.abs(lng) > 0.001;
   }
 
-  function sendCoords(lat, lng, source, round) {
-    // If round changed, always send
-    if (round !== undefined && round !== lastRound) {
-      lastRound = round;
-      lastCoords = null; // Reset
-      console.log('[CoordX Pro] Round changed to', round);
-    }
-
-    if (lastCoords &&
-        Math.abs(lastCoords.lat - lat) < 0.0001 &&
-        Math.abs(lastCoords.lng - lng) < 0.0001) {
-      return;
-    }
-    lastCoords = { lat, lng };
-
-    console.log('[CoordX Pro] Page script found coords:', lat, lng, 'via', source, 'round:', round);
+  function sendCoords(lat, lng, source) {
+    const now = Date.now();
+    
+    console.log('[CoordX Pro] 📍 Found coords:', lat, lng, 'via', source);
+    
     window.dispatchEvent(new CustomEvent('__coordx_coords', {
-      detail: { lat, lng, source, round }
+      detail: { lat, lng, source, timestamp: now }
     }));
   }
 
-  // Parse GeoGuessr specific API responses
-  function parseGeoGuessrResponse(data, url) {
-    // Game snapshot format
-    if (data.gameSnapshot) {
-      const snapshot = data.gameSnapshot;
-      const rounds = snapshot.rounds;
-      const currentRound = snapshot.round || 1;
+  // Deep search for coordinates in any object
+  function findAllCoords(obj, depth = 0, found = []) {
+    if (depth > 20 || !obj) return found;
 
-      if (rounds && rounds[currentRound - 1]) {
-        const r = rounds[currentRound - 1];
-        if (isValidCoord(r.lat, r.lng)) {
-          return { lat: r.lat, lng: r.lng, round: currentRound };
+    if (Array.isArray(obj)) {
+      // Check for [lat, lng] pair
+      for (let i = 0; i < obj.length - 1; i++) {
+        const lat = parseFloat(obj[i]);
+        const lng = parseFloat(obj[i + 1]);
+        if (isValidCoord(lat, lng)) {
+          found.push({ lat, lng, source: 'array_pair' });
         }
+      }
+      for (const item of obj) {
+        findAllCoords(item, depth + 1, found);
+      }
+    } else if (typeof obj === 'object' && obj !== null) {
+      // Check for lat/lng keys
+      const lat = obj.lat ?? obj.latitude ?? obj.y;
+      const lng = obj.lng ?? obj.lon ?? obj.longitude ?? obj.x;
+      
+      if (typeof lat === 'number' && typeof lng === 'number' && isValidCoord(lat, lng)) {
+        found.push({ lat, lng, source: 'object_keys' });
+      }
+      
+      // Recurse into all values
+      for (const v of Object.values(obj)) {
+        findAllCoords(v, depth + 1, found);
       }
     }
 
+    return found;
+  }
+
+  // Parse GeoGuessr specific responses
+  function parseGeoGuessrData(data, url) {
+    const results = [];
+    
+    // Check for game state with rounds
+    if (data.gameSnapshot) {
+      const snapshot = data.gameSnapshot;
+      const currentRound = snapshot.round || 1;
+      
+      if (snapshot.rounds && snapshot.rounds[currentRound - 1]) {
+        const r = snapshot.rounds[currentRound - 1];
+        if (isValidCoord(r.lat, r.lng)) {
+          results.push({ lat: r.lat, lng: r.lng, round: currentRound, source: 'gameSnapshot_round' });
+        }
+      }
+      // Also check all rounds
+      if (snapshot.rounds) {
+        for (let i = 0; i < snapshot.rounds.length; i++) {
+          const r = snapshot.rounds[i];
+          if (isValidCoord(r.lat, r.lng)) {
+            results.push({ lat: r.lat, lng: r.lng, round: i + 1, source: 'gameSnapshot_all' });
+          }
+        }
+      }
+    }
+    
     // Direct rounds array
     if (data.rounds && Array.isArray(data.rounds)) {
       const round = data.round || data.currentRound || 1;
-      if (data.rounds[round - 1]) {
-        const r = data.rounds[round - 1];
+      for (let i = 0; i < data.rounds.length; i++) {
+        const r = data.rounds[i];
         if (isValidCoord(r.lat, r.lng)) {
-          return { lat: r.lat, lng: r.lng, round: round };
+          results.push({ lat: r.lat, lng: r.lng, round: i + 1, source: 'rounds_array' });
         }
       }
     }
-
-    // Single round data
-    if (data.lat !== undefined && data.lng !== undefined) {
-      if (isValidCoord(data.lat, data.lng)) {
-        return { lat: data.lat, lng: data.lng };
-      }
+    
+    // Single location
+    if (isValidCoord(data.lat, data.lng)) {
+      results.push({ lat: data.lat, lng: data.lng, source: 'single_location' });
     }
 
-    return null;
+    return results;
   }
 
-  function parseCoordsFromText(text, url) {
-    if (!text) return null;
-
+  function processResponse(text, url) {
+    if (!text) return;
+    
     try {
       const data = JSON.parse(text);
       
       // First try GeoGuessr specific parsing
-      const ggResult = parseGeoGuessrResponse(data, url);
-      if (ggResult) return ggResult;
+      const ggResults = parseGeoGuessrData(data, url);
+      for (const r of ggResults) {
+        sendCoords(r.lat, r.lng, r.source + '_' + r.round);
+      }
       
-      // Generic parsing
-      const find = (obj, depth = 0) => {
-        if (depth > 15 || !obj) return null;
-
-        if (Array.isArray(obj)) {
-          for (let i = 0; i < obj.length - 1; i++) {
-            const lat = parseFloat(obj[i]);
-            const lng = parseFloat(obj[i + 1]);
-            if (isValidCoord(lat, lng)) {
-              return { lat, lng };
-            }
-          }
-          for (const item of obj) {
-            const r = find(item, depth + 1);
-            if (r) return r;
-          }
-        }
-
-        if (typeof obj === 'object' && obj !== null) {
-          const lat = obj.lat ?? obj.latitude ?? obj.y;
-          const lng = obj.lng ?? obj.lon ?? obj.longitude ?? obj.x;
-          if (typeof lat === 'number' && typeof lng === 'number' && isValidCoord(lat, lng)) {
-            return { lat, lng };
-          }
-          if (obj.location && typeof obj.location === 'object') {
-            const locLat = obj.location.lat ?? obj.location.latitude;
-            const locLng = obj.location.lng ?? obj.location.lon ?? obj.location.longitude;
-            if (typeof locLat === 'number' && typeof locLng === 'number' && isValidCoord(locLat, locLng)) {
-              return { lat: locLat, lng: locLng };
-            }
-          }
-          for (const v of Object.values(obj)) {
-            const r = find(v, depth + 1);
-            if (r) return r;
+      // Then do deep search
+      const found = findAllCoords(data);
+      for (const r of found) {
+        sendCoords(r.lat, r.lng, r.source);
+      }
+      
+    } catch (e) {
+      // Try regex for non-JSON responses
+      const patterns = [
+        /"lat"\\s*:\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*"lng"\\s*:\\s*(-?\\d{1,3}\\.\\d{4,})/g,
+        /"latitude"\\s*:\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*"longitude"\\s*:\\s*(-?\\d{1,3}\\.\\d{4,})/g
+      ];
+      
+      for (const pattern of patterns) {
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+          const lat = parseFloat(match[1]);
+          const lng = parseFloat(match[2]);
+          if (isValidCoord(lat, lng)) {
+            sendCoords(lat, lng, 'regex');
           }
         }
-        return null;
-      };
-
-      return find(data);
-    } catch {}
-
-    // Regex for coordinate patterns
-    const patterns = [
-      /"lat"\\s*:\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*"lng"\\s*:\\s*(-?\\d{1,3}\\.\\d{3,})/,
-      /"latitude"\\s*:\\s*(-?\\d{1,2}\\.\\d{3,})\\s*,\\s*"longitude"\\s*:\\s*(-?\\d{1,3}\\.\\d{3,})/,
-      /\\[\\s*(-?\\d{1,2}\\.\\d{4,})\\s*,\\s*(-?\\d{1,3}\\.\\d{4,})\\s*\\]/
-    ];
-
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match) {
-        const lat = parseFloat(match[1]);
-        const lng = parseFloat(match[2]);
-        if (isValidCoord(lat, lng)) return { lat, lng };
       }
     }
-
-    return null;
   }
 
-  // Hook fetch
+  // Hook fetch - VERY AGGRESSIVE
   const _fetch = window.fetch;
   window.fetch = async function(input, init) {
     const url = typeof input === 'string' ? input : input?.url || '';
     const response = await _fetch.apply(this, arguments);
     
-    // Check GeoGuessr specific endpoints
-    if (url.includes('geoguessr.com') && (
-        url.includes('/api/') ||
-        url.includes('game-snapshot') ||
-        url.includes('games') ||
-        url.includes('round')
-    )) {
+    // Check ALL geoguessr.com API calls
+    if (url.includes('geoguessr.com')) {
+      console.log('[CoordX Pro] 🔍 GeoGuessr fetch:', url);
       try {
         const cloned = response.clone();
         const text = await cloned.text();
-        const result = parseCoordsFromText(text, url);
-        if (result) {
-          const source = 'geoguessr_api';
-          sendCoords(result.lat, result.lng, source, result.round);
-        }
-      } catch {}
-    }
-    // Also check maps/geo related
-    else if (url.includes('google') || url.includes('maps') || url.includes('geo')) {
-      try {
-        const cloned = response.clone();
-        const text = await cloned.text();
-        const result = parseCoordsFromText(text, url);
-        if (result) {
-          sendCoords(result.lat, result.lng, 'fetch_' + url.split('?')[0].split('/').pop(), result.round);
-        }
-      } catch {}
+        processResponse(text, url);
+      } catch (e) {
+        console.warn('[CoordX Pro] Fetch parse error:', e.message);
+      }
     }
     
     return response;
@@ -379,53 +309,56 @@
   const _open = XMLHttpRequest.prototype.open;
   const _send = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function(method, url) {
-    this._url = url;
+    this._coordx_url = url;
     return _open.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function() {
     const xhr = this;
     xhr.addEventListener('load', function() {
-      try {
-        const result = parseCoordsFromText(xhr.responseText, xhr._url);
-        if (result) {
-          sendCoords(result.lat, result.lng, 'xhr', result.round);
-        }
-      } catch {}
+      if (xhr._coordx_url && xhr._coordx_url.includes('geoguessr.com')) {
+        console.log('[CoordX Pro] 🔍 GeoGuessr XHR:', xhr._coordx_url);
+        processResponse(xhr.responseText, xhr._coordx_url);
+      }
     });
     return _send.apply(this, arguments);
   };
 
-  // Monitor __NEXT_DATA__ changes for GeoGuessr
-  function monitorNextData() {
-    const checkNextData = () => {
-      const script = document.getElementById('__NEXT_DATA__');
-      if (!script) return;
+  // Hook WebSocket for real-time updates
+  const _WebSocket = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    const ws = new _WebSocket(url, protocols);
+    
+    if (url.includes('geoguessr')) {
+      console.log('[CoordX Pro] 🔍 GeoGuessr WebSocket:', url);
+      
+      ws.addEventListener('message', (event) => {
+        try {
+          processResponse(event.data, 'websocket');
+        } catch {}
+      });
+    }
+    
+    return ws;
+  };
+  window.WebSocket.prototype = _WebSocket.prototype;
 
+  // Also monitor __NEXT_DATA__ attribute changes
+  const script = document.getElementById('__NEXT_DATA__');
+  if (script) {
+    const observer = new MutationObserver(() => {
+      console.log('[CoordX Pro] __NEXT_DATA__ changed');
       try {
         const data = JSON.parse(script.textContent);
-        const props = data.props?.pageProps;
-        if (!props?.gameSnapshot) return;
-
-        const snapshot = props.gameSnapshot;
-        const rounds = snapshot.rounds;
-        const currentRound = snapshot.round || 1;
-
-        if (rounds && rounds[currentRound - 1]) {
-          const r = rounds[currentRound - 1];
-          if (isValidCoord(r.lat, r.lng)) {
-            sendCoords(r.lat, r.lng, 'nextdata_monitor', currentRound);
-          }
+        const results = parseGeoGuessrData(data, 'nextdata_mutation');
+        for (const r of results) {
+          sendCoords(r.lat, r.lng, r.source);
         }
       } catch {}
-    };
-
-    // Check periodically
-    setInterval(checkNextData, 500);
-    checkNextData();
+    });
+    observer.observe(script, { childList: true, characterData: true, subtree: true });
   }
 
-  monitorNextData();
-  console.log('[CoordX Pro] Network hooks installed');
+  console.log('[CoordX Pro] ✅ Aggressive network hooks installed');
 })();
 `;
 
@@ -435,71 +368,54 @@
 
   // Listen for coordinates from page script
   window.addEventListener('__coordx_coords', (event) => {
-    const { lat, lng, source, round } = event.detail;
-    
-    // If round changed, reset lastSentCoords
-    if (round !== undefined && round !== lastRoundNum) {
-      console.log('[CoordX Pro] Round change detected via page script:', round);
-      lastRoundNum = round;
-      lastSentCoords = null;
-    }
-    
+    const { lat, lng, source, timestamp } = event.detail;
     sendCoords(lat, lng, source);
   });
 
   /* ─── Initialization ──────────────────────────────────── */
 
   function init() {
-    console.log('[CoordX Pro] Initializing...');
+    console.log('[CoordX Pro] Initializing v1.2.3...');
     injectPageScript();
     
-    // Initial detection with delays
-    setTimeout(detectCoordinates, 500);
-    setTimeout(detectCoordinates, 1000);
-    setTimeout(detectCoordinates, 2000);
-    setTimeout(detectCoordinates, 3000);
+    // Initial detection
+    setTimeout(() => {
+      const hostname = window.location.hostname;
+      if (hostname.includes('geoguessr.com')) {
+        parseGeoGuessrNextData();
+      }
+    }, 500);
   }
 
   // Setup observers
   function setupObservers() {
-    // MutationObserver for DOM changes
-    const observer = new MutationObserver(() => {
-      detectCoordinates();
-    });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['src']
-    });
+    const hostname = window.location.hostname;
 
-    // URL change detection (for SPAs like GeoGuessr)
+    // WorldGuessr iframe monitoring
+    if (hostname.includes('worldguessr.com')) {
+      const observer = new MutationObserver(() => {
+        checkIframe();
+      });
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src']
+      });
+
+      // Also check periodically
+      setInterval(checkIframe, 500);
+    }
+
+    // URL change detection (for SPAs)
     let lastUrl = window.location.href;
     setInterval(() => {
       if (window.location.href !== lastUrl) {
         lastUrl = window.location.href;
-        console.log('[CoordX Pro] URL changed, re-detecting...');
+        console.log('[CoordX Pro] URL changed:', lastUrl);
         lastSentCoords = null; // Reset to allow new coords
-        lastRoundNum = -1; // Reset round tracking
-        setTimeout(detectCoordinates, 500);
-        setTimeout(detectCoordinates, 1000);
       }
     }, 300);
-
-    // Click listener (new rounds often triggered by clicks)
-    document.addEventListener('click', () => {
-      setTimeout(detectCoordinates, 200);
-      setTimeout(detectCoordinates, 500);
-      setTimeout(detectCoordinates, 1000);
-    });
-
-    // Periodic check for GeoGuessr round changes
-    setInterval(() => {
-      const hostname = window.location.hostname;
-      if (hostname.includes('geoguessr.com')) {
-        checkGeoGuessrRound();
-      }
-    }, 500);
   }
 
   if (document.readyState === 'loading') {
