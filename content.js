@@ -1,14 +1,12 @@
 /**
- * CoordX Pro — Content Script (v1.8.4)
- * 
- * Request background to inject main world script
+ * CoordX Pro — Content Script (v1.8.5)
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV184Injected) return;
-  window.__coordxProV184Injected = true;
+  if (window.__coordxProV185Injected) return;
+  window.__coordxProV185Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,8 +14,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.4 loaded');
-  logToBackground('Content v1.8.4 loaded');
+  console.log('[CoordX Pro] Content v1.8.5 loaded');
+  logToBackground('Content v1.8.5 loaded');
 
   let lastSentLat = null;
   let lastSentLng = null;
@@ -39,14 +37,12 @@
 
     const now = Date.now();
 
-    // Check if blocked
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.001 && Math.abs(lng - blockedLng) < 0.001) {
         return false;
       }
     }
 
-    // Skip if same as last sent
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -71,41 +67,28 @@
     }
   }
 
-  // Listen for messages from main world script
+  // Listen for messages from main world
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     
     const data = event.data;
-    if (!data || data.type !== 'COORDX_COORDS') return;
+    if (!data) return;
 
-    const { lat, lng, source } = data;
-    sendCoords(lat, lng, source);
+    // Handle coords
+    if (data.type === 'COORDX_COORDS') {
+      const { lat, lng, source } = data;
+      sendCoords(lat, lng, source);
+    }
+    
+    // Handle logs from main world
+    if (data.type === 'COORDX_LOG') {
+      logToBackground('[MW] ' + data.message);
+    }
   });
 
-  // Request background to inject main world script
+  // Request injection
   function requestMainWorldInjection() {
     chrome.runtime.sendMessage({ type: 'injectMainWorld' });
-  }
-
-  // WorldGuessr detection
-  function detectWorldGuessr() {
-    const url = window.location.href;
-    const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-    if (locMatch) {
-      return { lat: parseFloat(locMatch[1]), lng: parseFloat(locMatch[2]), source: 'url' };
-    }
-
-    const iframes = document.querySelectorAll('iframe');
-    for (const iframe of iframes) {
-      if (iframe.src && iframe.src.includes('location=')) {
-        const match = iframe.src.match(/location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if (match) {
-          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), source: 'iframe' };
-        }
-      }
-    }
-
-    return null;
   }
 
   // Force check listener
@@ -116,6 +99,8 @@
       blockedLat = null;
       blockedLng = null;
       blockUntil = 0;
+      // Re-inject main world
+      requestMainWorldInjection();
       sendResponse({ success: true });
     }
   });
@@ -123,14 +108,6 @@
   // Init
   function init() {
     requestMainWorldInjection();
-    
-    // WorldGuessr detection
-    if (window.location.hostname.includes('worldguessr.com')) {
-      const result = detectWorldGuessr();
-      if (result) {
-        sendCoords(result.lat, result.lng, result.source);
-      }
-    }
   }
 
   if (document.readyState === 'loading') {
@@ -142,7 +119,7 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Next button - block old coords
+  // Next button
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
@@ -150,9 +127,8 @@
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
         blockUntil = Date.now() + 20000;
-        logToBackground('Block: ' + blockedLat.toFixed(4) + ' for 20s');
+        logToBackground('Block: ' + blockedLat.toFixed(4));
       }
-      
       lastSentLat = null;
       lastSentLng = null;
     }
