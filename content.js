@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.7.8)
+ * CoordX Pro — Content Script (v1.7.9)
  * 
- * Wait for new coords after NEXT click
+ * Block same coords for longer period after NEXT
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV178Injected) return;
-  window.__coordxProV178Injected = true;
+  if (window.__coordxProV179Injected) return;
+  window.__coordxProV179Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,20 +16,19 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.7.8 loaded');
-  logToBackground('Content v1.7.8 loaded');
+  console.log('[CoordX Pro] Content v1.7.9 loaded');
+  logToBackground('Content v1.7.9 loaded');
 
-  let lastLat = null;
-  let lastLng = null;
+  let lastSentLat = null;
+  let lastSentLng = null;
   let lastRoundIndex = -1;
   let lastRoundToken = '';
   let structureLogged = false;
   
-  // Track previous round coords to detect actual changes
-  let previousRoundLat = null;
-  let previousRoundLng = null;
-  let waitingForNewRound = false;
-  let waitingStartTime = 0;
+  // Coords to block after NEXT
+  let blockedLat = null;
+  let blockedLng = null;
+  let blockUntil = 0;  // timestamp
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -45,38 +44,31 @@
       return false;
     }
 
-    // Check if waiting for new round
-    if (waitingForNewRound) {
-      const timeSinceWait = Date.now() - waitingStartTime;
-      
-      // In first 2 seconds after NEXT, only accept DIFFERENT coords
-      if (timeSinceWait < 2000) {
-        if (previousRoundLat !== null && previousRoundLng !== null) {
-          const isSameAsPrevious = 
-            Math.abs(lat - previousRoundLat) < 0.001 &&
-            Math.abs(lng - previousRoundLng) < 0.001;
-          
-          if (isSameAsPrevious) {
-            // Same as previous round, skip
-            return false;
-          }
-        }
-      }
-      
-      // Got different coords, stop waiting
-      waitingForNewRound = false;
-      logToBackground('New round coords found after ' + (timeSinceWait) + 'ms');
-    }
+    const now = Date.now();
 
-    // Skip if same as current
-    if (lastLat !== null && lastLng !== null) {
-      if (Math.abs(lastLat - lat) < 0.0001 && Math.abs(lastLng - lng) < 0.0001) {
+    // Check if these coords are blocked
+    if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
+      const isBlocked = 
+        Math.abs(lat - blockedLat) < 0.001 &&
+        Math.abs(lng - blockedLng) < 0.001;
+      
+      if (isBlocked) {
+        // Still blocked, skip
+        const remaining = Math.ceil((blockUntil - now) / 1000);
+        logToBackground('Blocked same coords (' + remaining + 's remaining)');
         return false;
       }
     }
 
-    lastLat = lat;
-    lastLng = lng;
+    // Skip if same as last sent
+    if (lastSentLat !== null && lastSentLng !== null) {
+      if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
+        return false;
+      }
+    }
+
+    lastSentLat = lat;
+    lastSentLng = lng;
 
     logToBackground('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
     console.log('[CoordX Pro] Found:', lat, lng, 'via', source);
@@ -131,16 +123,6 @@
       logToBackground('Round changed: ' + lastRoundIndex + ' → ' + roundIndex);
       lastRoundIndex = roundIndex;
       lastRoundToken = token;
-      
-      // Save previous round coords
-      if (lastLat !== null && lastLng !== null) {
-        previousRoundLat = lastLat;
-        previousRoundLng = lastLng;
-      }
-      
-      // Reset current coords
-      lastLat = null;
-      lastLng = null;
     }
 
     return { lat, lng, roundIndex, source: 'rounds[' + roundIndex + ']' };
@@ -150,7 +132,6 @@
   function extractFromChallenge(challenge) {
     if (!challenge) return null;
 
-    // Check for location
     if (challenge.location) {
       const loc = challenge.location;
       const lat = loc.lat ?? loc.latitude ?? loc.y;
@@ -160,18 +141,11 @@
         if (token !== lastRoundToken) {
           logToBackground('Challenge changed');
           lastRoundToken = token;
-          if (lastLat !== null && lastLng !== null) {
-            previousRoundLat = lastLat;
-            previousRoundLng = lastLng;
-          }
-          lastLat = null;
-          lastLng = null;
         }
         return { lat, lng, source: 'challenge.location' };
       }
     }
 
-    // Check for rounds array
     if (challenge.rounds && Array.isArray(challenge.rounds)) {
       const roundIndex = challenge.round ?? challenge.currentRound ?? 0;
       let idx = roundIndex;
@@ -189,12 +163,6 @@
             if (token !== lastRoundToken) {
               logToBackground('Challenge round changed');
               lastRoundToken = token;
-              if (lastLat !== null && lastLng !== null) {
-                previousRoundLat = lastLat;
-                previousRoundLng = lastLng;
-              }
-              lastLat = null;
-              lastLng = null;
             }
             return { lat, lng, roundIndex: idx, source: 'challenge.rounds[' + idx + ']' };
           }
@@ -289,13 +257,13 @@
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'forceCheck') {
       logToBackground('Force check');
-      lastLat = null;
-      lastLng = null;
+      lastSentLat = null;
+      lastSentLng = null;
       lastRoundIndex = -1;
       lastRoundToken = '';
-      previousRoundLat = null;
-      previousRoundLng = null;
-      waitingForNewRound = false;
+      blockedLat = null;
+      blockedLng = null;
+      blockUntil = 0;
       structureLogged = false;
       detect();
       sendResponse({ success: true });
@@ -317,7 +285,7 @@
   setTimeout(init, 1500);
   setTimeout(init, 3000);
 
-  // Poll every 500ms for faster detection
+  // Poll every 500ms
   setInterval(detect, 500);
 
   // URL change
@@ -326,12 +294,8 @@
     if (location.href !== lastUrl) {
       logToBackground('URL changed');
       lastUrl = location.href;
-      lastLat = null;
-      lastLng = null;
-      previousRoundLat = lastLat;
-      previousRoundLng = lastLng;
-      waitingForNewRound = true;
-      waitingStartTime = Date.now();
+      lastSentLat = null;
+      lastSentLng = null;
       lastRoundIndex = -1;
       lastRoundToken = '';
       structureLogged = false;
@@ -341,30 +305,25 @@
     }
   }, 200);
 
-  // Next button - enter waiting mode
+  // Next button - BLOCK current coords for 5 seconds
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
-      logToBackground('Button: ' + text + ' - waiting for new round');
+      logToBackground('Button: ' + text);
       
-      // Save current coords as previous round
-      if (lastLat !== null && lastLng !== null) {
-        previousRoundLat = lastLat;
-        previousRoundLng = lastLng;
+      // Block current coords for 5 seconds
+      if (lastSentLat !== null && lastSentLng !== null) {
+        blockedLat = lastSentLat;
+        blockedLng = lastSentLng;
+        blockUntil = Date.now() + 5000;  // 5 seconds
+        logToBackground('Blocking coords for 5s: ' + blockedLat.toFixed(4) + ', ' + blockedLng.toFixed(4));
       }
       
-      // Enter waiting mode
-      waitingForNewRound = true;
-      waitingStartTime = Date.now();
-      
-      // Reset
-      lastLat = null;
-      lastLng = null;
+      // Reset round tracking
       lastRoundIndex = -1;
       lastRoundToken = '';
-      structureLogged = false;
       
-      // Check multiple times with delays
+      // Check multiple times
       setTimeout(detect, 100);
       setTimeout(detect, 300);
       setTimeout(detect, 500);
@@ -372,6 +331,8 @@
       setTimeout(detect, 1500);
       setTimeout(detect, 2000);
       setTimeout(detect, 3000);
+      setTimeout(detect, 4000);
+      setTimeout(detect, 5000);
     }
   }, true);
 
