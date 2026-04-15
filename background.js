@@ -1,11 +1,10 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.1)
+ * CoordX Pro — Background Service Worker (v1.8.4)
  */
 
 const LOG_KEY = 'coordx_logs';
 const MAX_LOGS = 50;
 let lastLogTime = 0;
-let lastCoords = null;
 
 async function addLog(message) {
   try {
@@ -31,7 +30,7 @@ function log(msg) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.2');
+  log('Extension installed v1.8.4');
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -60,7 +59,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'resetSearch':
-      lastCoords = null;
       chrome.storage.local.remove(['lastCoords']);
       sendResponse({ success: true });
       break;
@@ -78,20 +76,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
       }
 
-      // Check if different
-      if (lastCoords &&
-          Math.abs(lastCoords.lat - lat) < 0.0001 &&
-          Math.abs(lastCoords.lng - lng) < 0.0001) {
-        sendResponse({ success: true, skipped: true });
-        break;
-      }
-
-      lastCoords = { lat, lng };
       log('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-
-      // Save to storage
       chrome.storage.local.set({ lastCoords: { lat, lng } });
-
       sendResponse({ success: true });
       break;
 
@@ -103,7 +89,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       sendResponse({ success: true });
       break;
+
+    case 'injectMainWorld':
+      // Inject main-world.js into the MAIN world of the requesting tab
+      if (sender.tab?.id) {
+        chrome.scripting.executeScript({
+          target: { tabId: sender.tab.id },
+          files: ['main-world.js'],
+          world: 'MAIN'
+        }).then(() => {
+          log('Main world script injected');
+        }).catch((e) => {
+          log('Inject failed: ' + e.message);
+        });
+      }
+      sendResponse({ success: true });
+      break;
   }
 });
 
-log('Background v1.8.3 ready');
+log('Background v1.8.4 ready');

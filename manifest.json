@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "description": "Location tracker for WorldGuessr — auto-detect Street View coordinates with address info, interactive map, and multiplayer support.",
   "permissions": [
     "sidePanel",
@@ -63,7 +63,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["map.html", "map.js", "leaflet/*", "leaflet/images/*"],
+      "resources": ["map.html", "map.js", "main-world.js", "leaflet/*", "leaflet/images/*"],
       "matches": ["<all_urls>"]
     }
   ],
