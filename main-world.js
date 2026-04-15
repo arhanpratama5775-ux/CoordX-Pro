@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Main World Script (v1.8.9)
+ * CoordX Pro — Main World Script (v1.8.10)
  * 
- * Debug __NEXT_DATA__ structure
+ * Debug ALL data sources
  */
 
 (function() {
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.9');
+  console.log('[CoordX Pro] Main world v1.8.10');
 
   function sendCoords(lat, lng, source) {
     window.postMessage({
@@ -35,7 +35,6 @@
 
   let lastLat = null;
   let lastLng = null;
-  let loggedOnce = false;
 
   function sendIfDifferent(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return;
@@ -48,102 +47,117 @@
     
     lastLat = lat;
     lastLng = lng;
+    sendLog('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
     sendCoords(lat, lng, source);
   }
 
+  // Recursively search for coords
+  function searchForCoords(obj, path = '', depth = 0) {
+    if (depth > 5 || !obj || typeof obj !== 'object') return [];
+    
+    const found = [];
+    
+    // Check this object
+    if (isValidCoord(obj.lat, obj.lng)) {
+      found.push({ lat: obj.lat, lng: obj.lng, path: path + '.lat/lng' });
+    }
+    if (isValidCoord(obj.latitude, obj.longitude)) {
+      found.push({ lat: obj.latitude, lng: obj.longitude, path: path + '.latitude/longitude' });
+    }
+    
+    // Check nested objects
+    for (const key in obj) {
+      const val = obj[key];
+      if (val && typeof val === 'object') {
+        const nested = searchForCoords(val, path + '.' + key, depth + 1);
+        found.push(...nested);
+      }
+    }
+    
+    return found;
+  }
+
   // Check __NEXT_DATA__
+  let loggedOnce = false;
+  let lastContentHash = '';
+
   function checkNextData() {
     const script = document.getElementById('__NEXT_DATA__');
-    if (!script?.textContent) {
-      if (!loggedOnce) sendLog('No __NEXT_DATA__');
-      return;
-    }
+    if (!script?.textContent) return;
+
+    const contentHash = script.textContent.length + '_' + script.textContent.substring(0, 100);
+    const contentChanged = contentHash !== lastContentHash;
+    lastContentHash = contentHash;
 
     try {
       const data = JSON.parse(script.textContent);
       const pp = data?.props?.pageProps;
       
-      if (!pp) {
-        if (!loggedOnce) sendLog('No pageProps');
-        return;
-      }
+      if (!pp) return;
 
-      // Log structure once
-      if (!loggedOnce) {
-        sendLog('pageProps keys: ' + Object.keys(pp).join(', '));
+      // Log structure on first run or change
+      if (!loggedOnce || contentChanged) {
+        sendLog('=== pageProps ===');
+        for (const key of Object.keys(pp)) {
+          const val = pp[key];
+          if (val === null) {
+            sendLog(key + ': null');
+          } else if (typeof val === 'object') {
+            const subKeys = Object.keys(val).slice(0, 10);
+            sendLog(key + ': {' + subKeys.join(', ') + '}');
+          } else {
+            sendLog(key + ': ' + typeof val);
+          }
+        }
         loggedOnce = true;
       }
 
-      // Try gameSnapshot
-      if (pp.gameSnapshot) {
-        const snapshot = pp.gameSnapshot;
-        const roundIndex = snapshot.round;
-        const rounds = snapshot.rounds;
-        
-        if (rounds && Array.isArray(rounds)) {
-          // Log every time
-          sendLog('round=' + roundIndex + ' rounds=' + rounds.length);
-          
-          // Try to get coords
-          let idx = roundIndex ?? 0;
-          if (idx >= rounds.length) idx = rounds.length - 1;
-          if (idx < 0) idx = 0;
-          
-          const r = rounds[idx];
-          if (r) {
-            const lat = r.lat ?? r.latitude;
-            const lng = r.lng ?? r.longitude;
-            if (isValidCoord(lat, lng)) {
-              sendIfDifferent(lat, lng, 'next_data');
-            } else {
-              sendLog('round[' + idx + '] no coords');
-            }
+      // Search ALL objects for coords
+      const allFound = [];
+      
+      for (const key of ['gameSnapshot', 'challenge', 'map', 'creator', 'game']) {
+        if (pp[key]) {
+          const found = searchForCoords(pp[key], key);
+          if (found.length > 0) {
+            allFound.push(...found);
           }
         }
       }
-      
-      // Try challenge
-      if (pp.challenge) {
-        const c = pp.challenge;
-        sendLog('challenge keys: ' + Object.keys(c).join(', '));
-        
-        if (c.location) {
-          const lat = c.location.lat;
-          const lng = c.location.lng;
-          if (isValidCoord(lat, lng)) {
-            sendIfDifferent(lat, lng, 'challenge');
-          }
+
+      // Log found coords
+      if (allFound.length > 0) {
+        for (const f of allFound) {
+          sendIfDifferent(f.lat, f.lng, f.path);
         }
       }
 
     } catch (e) {
-      sendLog('Parse error: ' + e.message);
+      sendLog('Error: ' + e.message);
     }
   }
 
-  // Watch for __NEXT_DATA__ content changes
-  function watchNextDataChanges() {
-    const script = document.getElementById('__NEXT_DATA__');
-    if (!script) return;
-
-    let lastContent = script.textContent;
+  // Also check window object
+  function checkWindow() {
+    const keys = ['__GAME_STATE__', '__INITIAL_STATE__', 'gameState', 'INITIAL_DATA', '__DATA__'];
     
-    setInterval(() => {
-      if (script.textContent !== lastContent) {
-        lastContent = script.textContent;
-        sendLog('__NEXT_DATA__ CHANGED!');
-        loggedOnce = false;  // Re-log structure
-        checkNextData();
+    for (const key of keys) {
+      if (window[key]) {
+        sendLog('Found window.' + key);
+        const found = searchForCoords(window[key], key);
+        for (const f of found) {
+          sendIfDifferent(f.lat, f.lng, f.path);
+        }
       }
-    }, 500);
+    }
   }
 
   // Initialize
   sendLog('Main world started');
   checkNextData();
-  watchNextDataChanges();
+  checkWindow();
 
   // Poll
   setInterval(checkNextData, 1000);
+  setInterval(checkWindow, 2000);
 
 })();
