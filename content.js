@@ -191,7 +191,6 @@
 
   /* ─── Send Current Round Coords ──────────────────────── */
 
-  let lastSentRound = -1;
   let ignoreDOMUntil = 0; // Timestamp to ignore DOM round detection
 
   function sendCurrentRoundCoords(source) {
