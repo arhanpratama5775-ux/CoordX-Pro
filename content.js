@@ -1,15 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.8.0)
+ * CoordX Pro — Content Script (v1.8.1)
  * 
- * New approach: Intercept API calls and watch DOM
- * __NEXT_DATA__ is static and doesn't update between rounds
+ * Inject script into MAIN world to access React/Google Maps state
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV180Injected) return;
-  window.__coordxProV180Injected = true;
+  if (window.__coordxProV181Injected) return;
+  window.__coordxProV181Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -17,8 +16,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.0 loaded');
-  logToBackground('Content v1.8.0 loaded');
+  console.log('[CoordX Pro] Content v1.8.1 loaded');
+  logToBackground('Content v1.8.1 loaded');
 
   let lastSentLat = null;
   let lastSentLng = null;
@@ -43,6 +42,8 @@
     // Check if blocked
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.001 && Math.abs(lng - blockedLng) < 0.001) {
+        const remaining = Math.ceil((blockUntil - now) / 1000);
+        logToBackground('Blocked (' + remaining + 's): ' + lat.toFixed(4));
         return false;
       }
     }
@@ -72,7 +73,218 @@
     }
   }
 
-  // Method 1: Try __NEXT_DATA__ (works on initial load)
+  // Listen for messages from injected script (MAIN world)
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    
+    const data = event.data;
+    if (!data || data.type !== 'COORDX_COORDS') return;
+
+    const { lat, lng, source } = data;
+    if (isValidCoord(lat, lng)) {
+      sendCoords(lat, lng, source);
+    }
+  });
+
+  // Inject script into MAIN world
+  function injectMainScript() {
+    const script = document.createElement('script');
+    script.textContent = `
+(function() {
+  if (window.__coordxMainInjected) return;
+  window.__coordxMainInjected = true;
+
+  console.log('[CoordX Pro] Main world script injected');
+
+  function sendCoords(lat, lng, source) {
+    window.postMessage({
+      type: 'COORDX_COORDS',
+      lat: lat,
+      lng: lng,
+      source: source
+    }, '*');
+  }
+
+  // Method 1: Access Google Maps Street View
+  function tryStreetView() {
+    try {
+      // Find Street View panorama
+      if (window.google && window.google.maps) {
+        // Look for panorama in various places
+        const checkPanorama = () => {
+          // Try to find panorama instance
+          const svPano = document.querySelector('[class*="street"]');
+          if (svPano && svPano.__jsaction) {
+            // Google Maps stores data in __jsaction
+          }
+        };
+
+        // Watch for panorama
+        setInterval(checkPanorama, 1000);
+      }
+    } catch (e) {}
+  }
+
+  // Method 2: Access React internals
+  function tryReactInternals() {
+    // React stores state in DOM elements with __reactFiber$ or __reactInternalInstance$
+    const findReactProps = (element) => {
+      const key = Object.keys(element || {}).find(k => 
+        k.startsWith('__reactFiber') || 
+        k.startsWith('__reactInternalInstance') ||
+        k.startsWith('__reactProps')
+      );
+      return element?.[key];
+    };
+
+    // Search for React components with coords
+    const searchReactTree = () => {
+      const elements = document.querySelectorAll('[class*="game"], [class*="round"], [class*="map"]');
+      
+      for (const el of elements) {
+        const fiber = findReactProps(el);
+        if (!fiber) continue;
+
+        // Try to find coords in React state
+        let current = fiber;
+        let depth = 0;
+        
+        while (current && depth < 20) {
+          const state = current.memoizedState || current.stateNode?.state;
+          if (state) {
+            // Check for lat/lng
+            if (isValidCoord(state.lat, state.lng)) {
+              return { lat: state.lat, lng: state.lng };
+            }
+            if (state.location && isValidCoord(state.location.lat, state.location.lng)) {
+              return { lat: state.location.lat, lng: state.location.lng };
+            }
+            if (state.position && isValidCoord(state.position.lat, state.position.lng)) {
+              return { lat: state.position.lat, lng: state.position.lng };
+            }
+          }
+          
+          current = current.return || current.child;
+          depth++;
+        }
+      }
+      
+      return null;
+    };
+
+    function isValidCoord(lat, lng) {
+      return !isNaN(lat) && !isNaN(lng) &&
+        lat >= -90 && lat <= 90 &&
+        lng >= -180 && lng <= 180 &&
+        !(lat === 0 && lng === 0);
+    }
+
+    setInterval(() => {
+      const result = searchReactTree();
+      if (result) {
+        sendCoords(result.lat, result.lng, 'react');
+      }
+    }, 1000);
+  }
+
+  // Method 3: Intercept Google Maps API calls
+  function interceptGoogleMaps() {
+    if (!window.google?.maps) {
+      setTimeout(interceptGoogleMaps, 100);
+      return;
+    }
+
+    // Hook into StreetViewService
+    const originalGetPanorama = window.google.maps.StreetViewService?.prototype?.getPanorama;
+    if (originalGetPanorama) {
+      window.google.maps.StreetViewService.prototype.getPanorama = function(...args) {
+        const callback = args[1];
+        if (typeof callback === 'function') {
+          args[1] = function(result, status) {
+            if (result && result.location) {
+              const lat = result.location.latLng?.lat();
+              const lng = result.location.latLng?.lng();
+              if (lat && lng) {
+                sendCoords(lat, lng, 'streetview_api');
+              }
+            }
+            return callback(result, status);
+          };
+        }
+        return originalGetPanorama.apply(this, args);
+      };
+    }
+
+    // Hook into StreetViewPanorama
+    const originalSetPosition = window.google.maps.StreetViewPanorama?.prototype?.setPosition;
+    if (originalSetPosition) {
+      window.google.maps.StreetViewPanorama.prototype.setPosition = function(latLng) {
+        const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat;
+        const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng;
+        if (lat && lng) {
+          sendCoords(lat, lng, 'panorama_setPosition');
+        }
+        return originalSetPosition.apply(this, arguments);
+      };
+    }
+
+    console.log('[CoordX Pro] Google Maps hooks installed');
+  }
+
+  // Method 4: Watch __NEXT_DATA__ changes via MutationObserver
+  function watchNextData() {
+    const script = document.getElementById('__NEXT_DATA__');
+    if (!script) return;
+
+    let lastContent = script.textContent;
+    
+    const checkChange = () => {
+      if (script.textContent !== lastContent) {
+        lastContent = script.textContent;
+        console.log('[CoordX Pro] __NEXT_DATA__ changed');
+        
+        try {
+          const data = JSON.parse(script.textContent);
+          const snapshot = data?.props?.pageProps?.gameSnapshot;
+          if (snapshot?.rounds) {
+            const roundIndex = snapshot.round ?? 0;
+            const rounds = snapshot.rounds;
+            if (roundIndex < rounds.length) {
+              const r = rounds[roundIndex];
+              if (r && !isNaN(r.lat) && !isNaN(r.lng)) {
+                sendCoords(r.lat, r.lng, 'next_data_changed');
+              }
+            }
+          }
+        } catch (e) {}
+      }
+    };
+
+    // Check periodically
+    setInterval(checkChange, 500);
+    
+    // Also observe DOM changes
+    const observer = new MutationObserver(checkChange);
+    observer.observe(script, { childList: true, characterData: true, subtree: true });
+  }
+
+  // Initialize all methods
+  tryStreetView();
+  tryReactInternals();
+  setTimeout(interceptGoogleMaps, 1000);
+  watchNextData();
+
+  console.log('[CoordX Pro] Main world script initialized');
+})();
+    `;
+    
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+    
+    logToBackground('Main script injected');
+  }
+
+  // Try __NEXT_DATA__ from content script too
   function tryNextData() {
     const script = document.getElementById('__NEXT_DATA__');
     if (!script || !script.textContent) return null;
@@ -101,145 +313,6 @@
     } catch (e) {}
     
     return null;
-  }
-
-  // Method 2: Intercept fetch/XHR
-  function setupNetworkInterceptor() {
-    // Intercept fetch
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-      const response = await originalFetch.apply(this, args);
-      
-      // Clone to read body
-      const clone = response.clone();
-      
-      try {
-        const url = args[0]?.url || args[0] || '';
-        
-        // Check if it's a GeoGuessr API call
-        if (typeof url === 'string' && url.includes('geoguessr.com') && url.includes('/api/')) {
-          clone.json().then(data => {
-            processApiResponse(url, data);
-          }).catch(() => {});
-        }
-      } catch (e) {}
-      
-      return response;
-    };
-
-    // Intercept XHR
-    const originalXHR = window.XMLHttpRequest;
-    window.XMLHttpRequest = function() {
-      const xhr = new originalXHR();
-      const originalOpen = xhr.open;
-      const originalSend = xhr.send;
-      
-      let url = '';
-      
-      xhr.open = function(method, u, ...rest) {
-        url = u;
-        return originalOpen.apply(this, [method, u, ...rest]);
-      };
-      
-      xhr.send = function(...args) {
-        xhr.addEventListener('load', function() {
-          if (url.includes('geoguessr.com') && url.includes('/api/')) {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              processApiResponse(url, data);
-            } catch (e) {}
-          }
-        });
-        return originalSend.apply(this, args);
-      };
-      
-      return xhr;
-    };
-  }
-
-  // Process API responses
-  function processApiResponse(url, data) {
-    logToBackground('API: ' + url.split('?')[0].split('/').slice(-2).join('/'));
-    
-    // Try to extract coords from various API responses
-    const coords = extractCoordsFromObject(data);
-    if (coords) {
-      sendCoords(coords.lat, coords.lng, 'api:' + coords.source);
-    }
-  }
-
-  // Recursively search for coords in any object
-  function extractCoordsFromObject(obj, path = '', depth = 0) {
-    if (depth > 5) return null;
-    if (!obj || typeof obj !== 'object') return null;
-
-    // Check if this object has lat/lng
-    if (isValidCoord(obj.lat, obj.lng)) {
-      return { lat: obj.lat, lng: obj.lng, source: path || 'obj' };
-    }
-    if (isValidCoord(obj.latitude, obj.longitude)) {
-      return { lat: obj.latitude, lng: obj.longitude, source: path || 'obj' };
-    }
-    if (obj.location && isValidCoord(obj.location.lat, obj.location.lng)) {
-      return { lat: obj.location.lat, lng: obj.location.lng, source: path + '.location' };
-    }
-
-    // Search in arrays
-    if (Array.isArray(obj)) {
-      for (let i = 0; i < obj.length; i++) {
-        const result = extractCoordsFromObject(obj[i], path + '[' + i + ']', depth + 1);
-        if (result) return result;
-      }
-    } else {
-      // Search in object properties
-      for (const key of Object.keys(obj)) {
-        if (key.toLowerCase().includes('round') || 
-            key.toLowerCase().includes('location') ||
-            key.toLowerCase().includes('coord') ||
-            key.toLowerCase().includes('game') ||
-            key === 'data') {
-          const result = extractCoordsFromObject(obj[key], path + '.' + key, depth + 1);
-          if (result) return result;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  // Method 3: Watch for Street View panorama changes
-  function watchStreetView() {
-    // Check for panorama in window
-    setInterval(() => {
-      try {
-        // Try to find panorama in various places
-        const sv = window.google?.maps?.StreetViewPanorama;
-        if (sv) {
-          // Try to get position from panorama instances
-          const panoramas = document.querySelectorAll('[style*="position"]');
-          // This is a long shot, but worth trying
-        }
-      } catch (e) {}
-    }, 1000);
-  }
-
-  // Method 4: Watch URL for changes that might indicate new round
-  let lastCheckedUrl = '';
-  function watchUrl() {
-    if (window.location.href !== lastCheckedUrl) {
-      lastCheckedUrl = window.location.href;
-      logToBackground('URL: ' + window.location.href);
-      
-      // Try to extract from URL if possible
-      const match = window.location.href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-      if (match) {
-        const lat = parseFloat(match[1]);
-        const lng = parseFloat(match[2]);
-        if (isValidCoord(lat, lng)) {
-          sendCoords(lat, lng, 'url');
-        }
-      }
-    }
   }
 
   // WorldGuessr detection
@@ -276,16 +349,12 @@
     }
 
     if (hostname.includes('geoguessr.com')) {
-      // Try __NEXT_DATA__ first
       const result = tryNextData();
       if (result) {
         sendCoords(result.lat, result.lng, result.source);
       }
     }
   }
-
-  // Setup network interceptor
-  setupNetworkInterceptor();
 
   // Force check listener
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -303,8 +372,8 @@
 
   // Init
   function init() {
+    injectMainScript();
     detect();
-    watchUrl();
   }
 
   if (document.readyState === 'loading') {
@@ -317,21 +386,7 @@
   setTimeout(init, 1500);
 
   // Poll
-  setInterval(detect, 1000);
-  setInterval(watchUrl, 500);
-
-  // URL change
-  let lastUrl = location.href;
-  setInterval(() => {
-    if (location.href !== lastUrl) {
-      logToBackground('URL changed');
-      lastUrl = location.href;
-      lastSentLat = null;
-      lastSentLng = null;
-      setTimeout(detect, 300);
-      setTimeout(detect, 1000);
-    }
-  }, 200);
+  setInterval(detect, 2000);
 
   // Next button
   document.addEventListener('click', (e) => {
@@ -342,15 +397,15 @@
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 10000;  // 10 seconds
-        logToBackground('Block 10s: ' + blockedLat.toFixed(4));
+        blockUntil = Date.now() + 15000;
+        logToBackground('Block 15s: ' + blockedLat.toFixed(4));
       }
       
       lastSentLat = null;
       lastSentLng = null;
       
-      // Extended check schedule
-      for (let i = 1; i <= 10; i++) {
+      // Extended check
+      for (let i = 1; i <= 15; i++) {
         setTimeout(detect, i * 1000);
       }
     }

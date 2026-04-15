@@ -45,7 +45,7 @@
     console.log('[CoordX Pro Sidepanel]', msg);
   }
 
-  log('Side panel v1.8.0 loaded');
+  log('Side panel v1.8.1 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
