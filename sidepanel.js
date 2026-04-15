@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.5.3)
+ * CoordX Pro — Side Panel Script (v1.5.4)
  */
 
 (function () {
@@ -7,15 +7,7 @@
 
   const $ = id => document.getElementById(id);
 
-  /* ─── Logging to Extension Logs ───────────────────────── */
 
-  async function logToExtension(message) {
-    const time = new Date().toISOString();
-    console.log('[CoordX Pro]', message);
-    try {
-      await chrome.runtime.sendMessage({ type: 'log', message: '[SIDE] ' + message, time });
-    } catch (e) {}
-  }
 
   const els = {
     statusText: $('statusText'),
@@ -49,12 +41,19 @@
   let logsVisible = false;
   let autoScrollEnabled = false;
 
-  logToExtension('🚀 Side panel v1.5.3 loaded');
+  // Sync log - fire and forget
+  function log(msg) {
+    console.log('[CoordX Pro]', msg);
+    const time = new Date().toISOString();
+    chrome.runtime.sendMessage({ type: 'log', message: '[SIDE] ' + msg, time }).catch(() => {});
+  }
+
+  log('🚀 Side panel v1.5.4 loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
   async function init() {
-    logToExtension('Initializing...');
+    log('Initializing...');
     
     const storage = await chrome.storage.local.get(['trackingEnabled', 'lastCoords']);
 
@@ -63,7 +62,7 @@
     }
 
     if (storage.lastCoords) {
-      logToExtension('Restoring coords from storage: ' + storage.lastCoords.lat?.toFixed?.(4) + ', ' + storage.lastCoords.lng?.toFixed?.(4));
+      log('Restoring coords from storage: ' + storage.lastCoords.lat?.toFixed?.(4) + ', ' + storage.lastCoords.lng?.toFixed?.(4));
       currentCoords = storage.lastCoords;
       updateCoordinates(storage.lastCoords.lat, storage.lastCoords.lng);
       els.statusText.textContent = 'Location found!';
@@ -139,35 +138,49 @@
   /* ─── Coordinate Update Handler ─────────────────────── */
 
   function handleNewCoords(lat, lng, source) {
-    logToExtension('📍 handleNewCoords called: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4) + ' from ' + source);
+    log('📍 handleNewCoords called: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4) + ' from ' + source);
 
     if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) {
-      logToExtension('❌ Invalid coords received: ' + lat + ', ' + lng);
+      log('❌ Invalid coords received: ' + lat + ', ' + lng);
       return;
     }
 
-    // ALWAYS update - user might be on a new round
+    // Check if coords are different
+    if (currentCoords) {
+      const diff = Math.abs(currentCoords.lat - lat) + Math.abs(currentCoords.lng - lng);
+      log('📊 Coords diff: ' + diff.toFixed(6) + ' (old: ' + currentCoords.lat?.toFixed?.(4) + ', ' + currentCoords.lng?.toFixed?.(4) + ')');
+      if (diff < 0.0001) {
+        log('⚠️ Same coords, skipping update');
+        return;
+      }
+    }
+
+    // Update current coords
     currentCoords = { lat, lng };
-    logToExtension('✅ Updating UI with new coords');
+    log('✅ UI UPDATE! New coords: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     // Update UI
-    updateCoordinates(lat, lng);
+    els.latValue.textContent = lat.toFixed(6);
+    els.lngValue.textContent = lng.toFixed(6);
+    els.coordSection.classList.add('active');
+    
+    // Update map
     postToMap(lat, lng);
     
     els.statusText.textContent = 'Location found!';
     els.statusText.classList.add('found');
     els.statusText.classList.remove('paused');
     
-    // Always fetch fresh geocoding
+    // Fetch fresh geocoding
     reverseGeocode(lat, lng);
   }
 
   /* ─── Message Listener ──────────────────────────────── */
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    logToExtension('📨 Received message: ' + message.type);
+    log('📨 Received message: ' + message.type);
     if (message.type === 'coordFound') {
-      logToExtension('🎉 coordFound message! Lat: ' + message.lat + ', Lng: ' + message.lng);
+      log('🎉 coordFound message! Lat: ' + message.lat + ', Lng: ' + message.lng);
       handleNewCoords(message.lat, message.lng, message.source || 'message');
     }
   });
@@ -175,11 +188,11 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
 
-    logToExtension('📦 Storage changed: ' + Object.keys(changes).join(', '));
+    log('📦 Storage changed: ' + Object.keys(changes).join(', '));
 
     if (changes.lastCoords && changes.lastCoords.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      logToExtension('🔄 lastCoords changed! New: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4));
+      log('🔄 lastCoords changed! New: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4));
       handleNewCoords(lat, lng, 'storage');
     }
   });

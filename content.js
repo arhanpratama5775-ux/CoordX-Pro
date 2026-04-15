@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.5.3)
+ * CoordX Pro — Content Script (v1.5.4)
  * 
  * Simplified approach with better logging
  */
@@ -8,8 +8,8 @@
   'use strict';
 
   // Prevent double injection
-  if (window.__coordxProV153Injected) return;
-  window.__coordxProV153Injected = true;
+  if (window.__coordxProV154Injected) return;
+  window.__coordxProV154Injected = true;
 
   /* ─── Logging ────────────────────────────────────────── */
 
@@ -21,7 +21,7 @@
     } catch (e) {}
   }
 
-  log('🚀 Content script v1.5.3 loaded');
+  log('🚀 Content script v1.5.4 loaded');
 
   /* ─── State ──────────────────────────────────────────── */
 
@@ -135,10 +135,15 @@
       currentRoundIndex = roundIndex;
 
       log('🎮 Loaded', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
+      
+      // Log all rounds for debugging
+      allRounds.forEach((round, i) => {
+        log('  Round', i + 1, ':', round.lat.toFixed(4), round.lng.toFixed(4));
+      });
 
       // Send current round coords
       const r = allRounds[currentRoundIndex];
-      log('🎯 Current round data:', r);
+      log('🎯 Current round data:', r?.lat?.toFixed?.(4), r?.lng?.toFixed?.(4));
       if (r) {
         sendCoords(r.lat, r.lng, `round_${currentRoundIndex + 1}`);
       } else {
@@ -180,12 +185,13 @@
       // Check for NEXT button
       if (text === 'NEXT' || text.includes('NEXT') || className.includes('next')) {
         log('🖱️ NEXT clicked! text="' + text + '"');
+        log('📊 Current state: roundIdx=' + currentRoundIndex + ', allRounds=' + allRounds.length);
         
         // Try to advance round
         if (currentRoundIndex < allRounds.length - 1) {
           currentRoundIndex++;
           const r = allRounds[currentRoundIndex];
-          log('➡️ Advancing to round', currentRoundIndex + 1, ':', r);
+          log('➡️ Advancing to round', currentRoundIndex + 1, ':', r?.lat?.toFixed?.(4), r?.lng?.toFixed?.(4));
           if (r) {
             sendCoords(r.lat, r.lng, `next_round_${currentRoundIndex + 1}`);
           }
