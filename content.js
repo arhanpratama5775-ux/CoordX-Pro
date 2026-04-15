@@ -1,16 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.7.1)
+ * CoordX Pro — Content Script (v1.7.2)
  * 
- * Simplified detection with better logging
+ * Better extraction with detailed logging
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV171Injected) return;
-  window.__coordxProV171Injected = true;
-
-  const LOG_PREFIX = '[CoordX Pro]';
+  if (window.__coordxProV172Injected) return;
+  window.__coordxProV172Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -18,13 +16,13 @@
     } catch (e) {}
   }
 
-  console.log(LOG_PREFIX, 'Content v1.7.1 loaded');
-  logToBackground('Content v1.7.1 loaded');
+  console.log('[CoordX Pro] Content v1.7.2 loaded');
+  logToBackground('Content v1.7.2 loaded');
 
   let lastLat = null;
   let lastLng = null;
   let lastRoundIndex = -1;
-  let checkCount = 0;
+  let hasLoggedStructure = false;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -52,7 +50,7 @@
     lastLng = lng;
 
     logToBackground('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-    console.log(LOG_PREFIX, 'Found:', lat, lng, 'via', source);
+    console.log('[CoordX Pro] Found:', lat, lng, 'via', source);
 
     try {
       chrome.runtime.sendMessage({
@@ -68,75 +66,126 @@
     }
   }
 
-  // Parse __NEXT_DATA__
-  function parseNextData() {
-    const script = document.getElementById('__NEXT_DATA__');
-    if (!script) {
-      return { error: 'No __NEXT_DATA__ element' };
-    }
-    if (!script.textContent) {
-      return { error: '__NEXT_DATA__ empty' };
-    }
-
-    try {
-      const data = JSON.parse(script.textContent);
-      return { data };
-    } catch (e) {
-      return { error: 'JSON parse failed: ' + e.message };
+  // Log object structure (first level only)
+  function logStructure(name, obj, depth = 0) {
+    if (!obj || typeof obj !== 'object') return;
+    
+    const keys = Object.keys(obj).slice(0, 15);
+    logToBackground(name + ': [' + keys.join(', ') + ']');
+    
+    // Log specific important objects
+    if (depth < 2) {
+      for (const key of ['rounds', 'round', 'location', 'lat', 'lng', 'coordinates', 'map', 'challenge']) {
+        if (obj[key] !== undefined) {
+          if (typeof obj[key] === 'object' && obj[key] !== null) {
+            logStructure(name + '.' + key, obj[key], depth + 1);
+          } else {
+            logToBackground(name + '.' + key + ' = ' + obj[key]);
+          }
+        }
+      }
     }
   }
 
-  // Extract coords from parsed data
-  function extractCoordsFromNextData(data) {
-    // Try multiple paths
-    const paths = [
-      // Battle Royale / standard games
-      () => {
-        const snapshot = data?.props?.pageProps?.gameSnapshot;
-        if (!snapshot?.rounds) return null;
-        
-        const roundIndex = snapshot.round ?? 0;
-        const rounds = snapshot.rounds;
-        
-        if (roundIndex >= 0 && roundIndex < rounds.length) {
-          const r = rounds[roundIndex];
-          if (r && isValidCoord(r.lat, r.lng)) {
-            return { lat: r.lat, lng: r.lng, roundIndex, source: 'next_data_rounds' };
-          }
-        }
-        return null;
-      },
-      // Try player property
-      () => {
-        const player = data?.props?.pageProps?.player;
-        if (player && isValidCoord(player.lat, player.lng)) {
-          return { lat: player.lat, lng: player.lng, source: 'next_data_player' };
-        }
-        return null;
-      },
-      // Try location property
-      () => {
-        const location = data?.props?.pageProps?.location;
-        if (location && isValidCoord(location.lat, location.lng)) {
-          return { lat: location.lat, lng: location.lng, source: 'next_data_location' };
-        }
-        return null;
-      },
-      // Try game property
-      () => {
-        const game = data?.props?.pageProps?.game;
-        if (game?.round?.lat !== undefined && game?.round?.lng !== undefined) {
-          if (isValidCoord(game.round.lat, game.round.lng)) {
-            return { lat: game.round.lat, lng: game.round.lng, source: 'next_data_game' };
-          }
-        }
-        return null;
-      }
-    ];
+  // Try to extract coordinates from gameSnapshot
+  function extractFromGameSnapshot(snapshot) {
+    if (!snapshot) return null;
 
-    for (const getPath of paths) {
-      const result = getPath();
-      if (result) return result;
+    // Log structure once
+    if (!hasLoggedStructure) {
+      logStructure('gameSnapshot', snapshot);
+      hasLoggedStructure = true;
+    }
+
+    // Try: snapshot.rounds[roundIndex]
+    if (snapshot.rounds && Array.isArray(snapshot.rounds)) {
+      const roundIndex = snapshot.round ?? 0;
+      if (roundIndex >= 0 && roundIndex < snapshot.rounds.length) {
+        const r = snapshot.rounds[roundIndex];
+        if (r) {
+          // Try different coord properties
+          const lat = r.lat ?? r.latitude ?? r.y;
+          const lng = r.lng ?? r.lon ?? r.longitude ?? r.x;
+          if (isValidCoord(lat, lng)) {
+            return { lat, lng, roundIndex, source: 'gameSnapshot.rounds[' + roundIndex + ']' };
+          }
+          // Log what's in the round
+          if (!hasLoggedStructure) {
+            logStructure('round[' + roundIndex + ']', r);
+          }
+        }
+      }
+    }
+
+    // Try: snapshot.location or snapshot.coordinate
+    if (snapshot.location) {
+      const loc = snapshot.location;
+      const lat = loc.lat ?? loc.latitude ?? loc.y;
+      const lng = loc.lng ?? loc.lon ?? loc.longitude ?? loc.x;
+      if (isValidCoord(lat, lng)) {
+        return { lat, lng, source: 'gameSnapshot.location' };
+      }
+    }
+
+    // Try: snapshot.player
+    if (snapshot.player) {
+      const p = snapshot.player;
+      const lat = p.lat ?? p.latitude;
+      const lng = p.lng ?? p.longitude;
+      if (isValidCoord(lat, lng)) {
+        return { lat, lng, source: 'gameSnapshot.player' };
+      }
+    }
+
+    // Try: snapshot.panorama
+    if (snapshot.panorama) {
+      const pan = snapshot.panorama;
+      const lat = pan.lat ?? pan.latitude;
+      const lng = pan.lng ?? pan.longitude;
+      if (isValidCoord(lat, lng)) {
+        return { lat, lng, source: 'gameSnapshot.panorama' };
+      }
+    }
+
+    return null;
+  }
+
+  // Try to extract from map property
+  function extractFromMap(map) {
+    if (!map) return null;
+
+    // Log structure once
+    if (!hasLoggedStructure) {
+      logStructure('map', map);
+    }
+
+    // Try common patterns
+    const lat = map.lat ?? map.latitude ?? map.center?.lat ?? map.center?.latitude;
+    const lng = map.lng ?? map.lon ?? map.longitude ?? map.center?.lng ?? map.center?.longitude;
+
+    if (isValidCoord(lat, lng)) {
+      return { lat, lng, source: 'map' };
+    }
+
+    return null;
+  }
+
+  // Try to extract from challenge property
+  function extractFromChallenge(challenge) {
+    if (!challenge) return null;
+
+    // Log structure once
+    if (!hasLoggedStructure) {
+      logStructure('challenge', challenge);
+    }
+
+    // Try common patterns
+    if (challenge.location) {
+      const lat = challenge.location.lat ?? challenge.location.latitude;
+      const lng = challenge.location.lng ?? challenge.location.longitude;
+      if (isValidCoord(lat, lng)) {
+        return { lat, lng, source: 'challenge.location' };
+      }
     }
 
     return null;
@@ -144,7 +193,6 @@
 
   // WorldGuessr detection
   function detectWorldGuessr() {
-    // Check URL params
     const url = window.location.href;
     const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
     if (locMatch) {
@@ -155,7 +203,6 @@
       }
     }
 
-    // Check iframes
     const iframes = document.querySelectorAll('iframe');
     for (const iframe of iframes) {
       if (iframe.src && iframe.src.includes('location=')) {
@@ -175,7 +222,6 @@
 
   // Main detection
   function detect() {
-    checkCount++;
     const hostname = window.location.hostname;
 
     // WorldGuessr
@@ -190,39 +236,55 @@
 
     // GeoGuessr
     if (hostname.includes('geoguessr.com')) {
-      const result = parseNextData();
-
-      if (result.error) {
-        // Only log error once every 10 checks to reduce spam
-        if (checkCount % 10 === 1) {
-          logToBackground('GeoGuessr: ' + result.error);
-        }
+      const script = document.getElementById('__NEXT_DATA__');
+      if (!script || !script.textContent) {
         return false;
       }
 
-      const coords = extractCoordsFromNextData(result.data);
+      let data;
+      try {
+        data = JSON.parse(script.textContent);
+      } catch (e) {
+        return false;
+      }
 
-      if (coords) {
-        // Check if round changed
-        if (coords.roundIndex !== undefined && coords.roundIndex !== lastRoundIndex) {
-          logToBackground('Round changed: ' + lastRoundIndex + ' -> ' + coords.roundIndex);
-          lastRoundIndex = coords.roundIndex;
-          // Force update even if coords are same
-          lastLat = null;
-          lastLng = null;
-        }
-        sendCoords(coords.lat, coords.lng, coords.source);
-        return true;
-      } else {
-        // Log data structure for debugging (only once every 10 checks)
-        if (checkCount % 10 === 1) {
-          const pp = result.data?.props?.pageProps;
-          if (pp) {
-            const keys = Object.keys(pp).slice(0, 10).join(', ');
-            logToBackground('pageProps keys: ' + keys);
-          } else {
-            logToBackground('No pageProps');
+      const pp = data?.props?.pageProps;
+      if (!pp) return false;
+
+      // Try each extraction method
+      let result = null;
+
+      // 1. gameSnapshot
+      if (pp.gameSnapshot) {
+        result = extractFromGameSnapshot(pp.gameSnapshot);
+        if (result) {
+          // Check round change
+          if (result.roundIndex !== undefined && result.roundIndex !== lastRoundIndex) {
+            logToBackground('Round: ' + lastRoundIndex + ' → ' + result.roundIndex);
+            lastRoundIndex = result.roundIndex;
+            lastLat = null;
+            lastLng = null;
           }
+          sendCoords(result.lat, result.lng, result.source);
+          return true;
+        }
+      }
+
+      // 2. map
+      if (pp.map) {
+        result = extractFromMap(pp.map);
+        if (result) {
+          sendCoords(result.lat, result.lng, result.source);
+          return true;
+        }
+      }
+
+      // 3. challenge
+      if (pp.challenge) {
+        result = extractFromChallenge(pp.challenge);
+        if (result) {
+          sendCoords(result.lat, result.lng, result.source);
+          return true;
         }
       }
 
@@ -235,10 +297,11 @@
   // Listen for force check
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'forceCheck') {
-      logToBackground('Force check triggered');
+      logToBackground('Force check');
       lastLat = null;
       lastLng = null;
       lastRoundIndex = -1;
+      hasLoggedStructure = false;
       detect();
       sendResponse({ success: true });
     }
@@ -255,12 +318,10 @@
     init();
   }
 
-  // Retry
   setTimeout(init, 500);
   setTimeout(init, 1500);
   setTimeout(init, 3000);
 
-  // Poll every 2 seconds
   setInterval(detect, 2000);
 
   // URL change
@@ -272,6 +333,7 @@
       lastLat = null;
       lastLng = null;
       lastRoundIndex = -1;
+      hasLoggedStructure = false;
       setTimeout(init, 300);
       setTimeout(init, 1000);
     }
@@ -285,6 +347,7 @@
       lastLat = null;
       lastLng = null;
       lastRoundIndex = -1;
+      hasLoggedStructure = false;
       setTimeout(init, 300);
       setTimeout(init, 1000);
       setTimeout(init, 2000);
