@@ -14,8 +14,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.7 loaded');
-  logToBackground('Content v1.8.7 loaded');
+  console.log('[CoordX Pro] Content v1.8.8 loaded');
+  logToBackground('Content v1.8.8 loaded');
 
   let lastSentLat = null;
   let lastSentLng = null;
