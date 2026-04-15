@@ -58,8 +58,6 @@
   /* ─── Send Coordinates to Background ─────────────────── */
 
   function sendCoords(lat, lng, source) {
-    log('📍 Sending coords:', lat, lng, 'via', source);
-    
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
@@ -68,13 +66,11 @@
         source
       }, (response) => {
         if (chrome.runtime.lastError) {
-          log('Send result:', chrome.runtime.lastError.message);
-        } else {
-          log('Send response:', response);
+          log('❌ Send failed:', chrome.runtime.lastError.message);
         }
       });
     } catch (e) {
-      log('Send error:', e.message);
+      log('❌ Send error:', e.message);
     }
   }
 
@@ -195,7 +191,7 @@
 
   /* ─── Send Current Round Coords ──────────────────────── */
 
-  let lastLoggedRound = -1;
+  let lastSentRound = -1;
   let ignoreDOMUntil = 0; // Timestamp to ignore DOM round detection
 
   function sendCurrentRoundCoords(source) {
@@ -207,27 +203,24 @@
       domRound = getCurrentRoundFromDOM();
     }
     
-    // Only log detailed info if something changed
-    if (domRound !== lastLoggedRound || source === 'init' || source.includes('click')) {
-      log(`sendCurrentRoundCoords(${source}): domRound=${domRound}, currentIndex=${currentRoundIndex}, lastSent=${lastSentRound}`);
-    }
-    
+    // Update round index from DOM if different
     if (domRound !== currentRoundIndex && domRound >= 0 && domRound < allRounds.length) {
-      log('🔄 Round changed:', currentRoundIndex + 1, '->', domRound + 1);
+      log('🔄 Round changed from DOM:', currentRoundIndex + 1, '->', domRound + 1);
       currentRoundIndex = domRound;
-      lastSentRound = -1; // Reset
+      lastSentRound = -1; // Force resend for new round
     }
 
-    if (currentRoundIndex !== lastSentRound && allRounds[currentRoundIndex]) {
+    // Send coords if this round hasn't been sent yet
+    if (currentRoundIndex !== lastSentRound) {
       const r = allRounds[currentRoundIndex];
-      log('📍 Sending round', currentRoundIndex + 1, ':', r.lat.toFixed(4), r.lng.toFixed(4));
-      sendCoords(r.lat, r.lng, 'geoguessr_r' + (currentRoundIndex + 1) + '_' + source);
-      lastSentRound = currentRoundIndex;
-      lastLoggedRound = currentRoundIndex;
-    } else if (!allRounds[currentRoundIndex]) {
-      log('⚠️ No round data for index', currentRoundIndex, '- total rounds:', allRounds.length);
+      if (r) {
+        log('📍 Sending round', currentRoundIndex + 1, ':', r.lat.toFixed(4), r.lng.toFixed(4), 'via', source);
+        sendCoords(r.lat, r.lng, 'geoguessr_r' + (currentRoundIndex + 1));
+        lastSentRound = currentRoundIndex;
+      } else {
+        log('⚠️ No round data for index', currentRoundIndex, '- total rounds:', allRounds.length);
+      }
     }
-    // Don't log "Already sent" anymore - it's noisy
   }
 
   /* ─── WorldGuessr: Iframe Detection ─────────────────── */
@@ -253,8 +246,6 @@
   /* ─── Inject Page Script for Network Hooks ──────────── */
 
   function injectPageScript() {
-    log('Injecting page script...');
-    
     const script = document.createElement('script');
     script.id = 'coordx-page-script';
     script.textContent = `
@@ -367,9 +358,8 @@
     try {
       (document.head || document.documentElement).appendChild(script);
       script.remove();
-      log('Page script injected');
     } catch (e) {
-      log('Failed to inject page script:', e.message);
+      log('❌ Failed to inject page script:', e.message);
     }
   }
 
@@ -403,23 +393,22 @@
       // Check for NEXT button
       if (text === 'NEXT' || ariaLabel === 'NEXT' || 
           text.includes('NEXT') || className.includes('next')) {
-        log('🖱️ NEXT button clicked! text="' + text + '"');
+        log('🖱️ NEXT button clicked!');
         
         // Advance round
         if (currentRoundIndex < allRounds.length - 1) {
           currentRoundIndex++;
-          lastSentRound = -1;
-          log('➡️ Advancing to round', currentRoundIndex + 1);
+          lastSentRound = -1; // CRITICAL: Reset so new coords will be sent
+          log('➡️ Advanced to round', currentRoundIndex + 1);
           
-          // Set grace period - ignore DOM detection for 3 seconds
-          ignoreDOMUntil = Date.now() + 3000;
+          // Set grace period - ignore DOM detection for 2 seconds
+          ignoreDOMUntil = Date.now() + 2000;
+          
+          // Send coords immediately (after short delay for state to settle)
+          setTimeout(() => sendCurrentRoundCoords('next_click'), 100);
+        } else {
+          log('⚠️ Already at last round');
         }
-        
-        // Send new coords after delays (DOM needs time to update)
-        setTimeout(() => sendCurrentRoundCoords('click'), 100);
-        setTimeout(() => sendCurrentRoundCoords('click2'), 500);
-        setTimeout(() => sendCurrentRoundCoords('click3'), 1500);
-        setTimeout(() => sendCurrentRoundCoords('click4'), 3000);
       }
     }, true);
     
@@ -429,50 +418,37 @@
   /* ─── Main Init ─────────────────────────────────────── */
 
   function init() {
-    log('init() called');
-    
     const hostname = window.location.hostname;
-    log('Hostname:', hostname);
+    log('🎮 Site:', hostname);
 
     // Inject page script for network hooks
     injectPageScript();
 
     if (hostname.includes('geoguessr.com')) {
-      log('🎮 GeoGuessr mode');
-      
       // Parse initial data with retries
       parseNextData();
-      setTimeout(() => parseNextData(), 500);
-      setTimeout(() => parseNextData(), 1000);
-      setTimeout(() => parseNextData(), 2000);
+      setTimeout(parseNextData, 500);
+      setTimeout(parseNextData, 1500);
 
       // Setup click listener
       setupClickListener();
 
-      // Check round changes periodically
-      setInterval(() => {
-        sendCurrentRoundCoords('periodic');
-      }, 1000);
+      // Check round changes periodically (quietly)
+      setInterval(() => sendCurrentRoundCoords('periodic'), 1000);
 
       // Send initial coords
       setTimeout(() => sendCurrentRoundCoords('init'), 1000);
-      setTimeout(() => sendCurrentRoundCoords('init2'), 2000);
     }
 
     if (hostname.includes('worldguessr.com')) {
-      log('🎮 WorldGuessr mode');
       setInterval(checkWorldGuessrIframe, 500);
     }
   }
 
   // Run when ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      log('DOM loaded');
-      init();
-    });
+    document.addEventListener('DOMContentLoaded', init);
   } else {
-    log('DOM already ready');
     init();
   }
 
