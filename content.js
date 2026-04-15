@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.7.3)
+ * CoordX Pro — Content Script (v1.7.4)
  * 
- * Deep structure logging
+ * Fix roundIndex out of bounds issue
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV173Injected) return;
-  window.__coordxProV173Injected = true;
+  if (window.__coordxProV174Injected) return;
+  window.__coordxProV174Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,8 +16,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.7.3 loaded');
-  logToBackground('Content v1.7.3 loaded');
+  console.log('[CoordX Pro] Content v1.7.4 loaded');
+  logToBackground('Content v1.7.4 loaded');
 
   let lastLat = null;
   let lastLng = null;
@@ -81,17 +81,11 @@
         if (val[0] && typeof val[0] === 'object') {
           deepLog(name + '.' + key + '[0]', val[0], maxDepth, currentDepth + 1);
         }
-      } else if (typeof val === 'number' || typeof val === 'string') {
-        // Log coordinate-like values
-        if (key.toLowerCase().includes('lat') || key.toLowerCase().includes('lng') ||
-            key.toLowerCase().includes('lon') || key === 'x' || key === 'y') {
-          logToBackground(name + '.' + key + ' = ' + val);
-        }
       }
     }
   }
 
-  // Extract coordinates - try all possible paths
+  // Extract coordinates
   function extractCoords(snapshot) {
     if (!snapshot) return null;
 
@@ -101,60 +95,70 @@
       structureLogged = true;
     }
 
-    // Path 1: snapshot.rounds[roundIndex]
-    if (snapshot.rounds && Array.isArray(snapshot.rounds)) {
-      const roundIndex = snapshot.round ?? 0;
-      logToBackground('roundIndex = ' + roundIndex + ', rounds.length = ' + snapshot.rounds.length);
+    const rounds = snapshot.rounds;
+    if (!rounds || !Array.isArray(rounds) || rounds.length === 0) {
+      return null;
+    }
 
-      if (roundIndex >= 0 && roundIndex < snapshot.rounds.length) {
-        const r = snapshot.rounds[roundIndex];
-        if (r) {
-          // Try all possible lat/lng names
-          const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
-          const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
+    let roundIndex = snapshot.round ?? 0;
+    logToBackground('roundIndex = ' + roundIndex + ', rounds.length = ' + rounds.length);
 
-          if (isValidCoord(lat, lng)) {
-            return { lat, lng, roundIndex, source: 'rounds[' + roundIndex + ']' };
-          }
+    // Fix: roundIndex might be out of bounds (game ended) or 1-indexed
+    // Try multiple approaches:
+    
+    // Approach 1: Use roundIndex as-is if valid
+    if (roundIndex >= 0 && roundIndex < rounds.length) {
+      const r = rounds[roundIndex];
+      if (r) {
+        const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
+        const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
+        if (isValidCoord(lat, lng)) {
+          return { lat, lng, roundIndex, source: 'rounds[' + roundIndex + ']' };
+        }
+        logToBackground('rounds[' + roundIndex + '] no valid coords');
+      }
+    }
+
+    // Approach 2: Try roundIndex - 1 (1-indexed)
+    if (roundIndex > 0 && roundIndex <= rounds.length) {
+      const r = rounds[roundIndex - 1];
+      if (r) {
+        const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
+        const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
+        if (isValidCoord(lat, lng)) {
+          logToBackground('Using 1-indexed: rounds[' + (roundIndex - 1) + ']');
+          return { lat, lng, roundIndex: roundIndex - 1, source: 'rounds[' + (roundIndex - 1) + ']' };
         }
       }
     }
 
-    // Path 2: snapshot.coordinate
-    if (snapshot.coordinate) {
-      const c = snapshot.coordinate;
-      const lat = c.lat ?? c.latitude ?? c.y;
-      const lng = c.lng ?? c.lon ?? c.longitude ?? c.x;
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'coordinate' };
+    // Approach 3: roundIndex >= length, try last round (current game)
+    if (roundIndex >= rounds.length && rounds.length > 0) {
+      const r = rounds[rounds.length - 1];
+      if (r) {
+        const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
+        const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
+        if (isValidCoord(lat, lng)) {
+          logToBackground('Using last round: rounds[' + (rounds.length - 1) + ']');
+          return { lat, lng, roundIndex: rounds.length - 1, source: 'rounds[last]' };
+        }
       }
     }
 
-    // Path 3: snapshot.location
-    if (snapshot.location && typeof snapshot.location === 'object') {
-      const loc = snapshot.location;
-      const lat = loc.lat ?? loc.latitude ?? loc.y;
-      const lng = loc.lng ?? loc.lon ?? loc.longitude ?? loc.x;
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'location' };
+    // Approach 4: Try ALL rounds and find one with valid coords
+    for (let i = rounds.length - 1; i >= 0; i--) {
+      const r = rounds[i];
+      if (r) {
+        const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
+        const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
+        if (isValidCoord(lat, lng)) {
+          logToBackground('Found in rounds[' + i + ']');
+          return { lat, lng, roundIndex: i, source: 'rounds[' + i + ']' };
+        }
       }
     }
 
-    // Path 4: snapshot.panorama
-    if (snapshot.panorama && typeof snapshot.panorama === 'object') {
-      const pan = snapshot.panorama;
-      const lat = pan.lat ?? pan.latitude ?? pan.y;
-      const lng = pan.lng ?? pan.lon ?? pan.longitude ?? pan.x;
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'panorama' };
-      }
-    }
-
-    // Path 5: Direct lat/lng on snapshot
-    if (isValidCoord(snapshot.lat, snapshot.lng)) {
-      return { lat: snapshot.lat, lng: snapshot.lng, source: 'snapshot direct' };
-    }
-
+    logToBackground('No valid coords in any round!');
     return null;
   }
 
@@ -213,7 +217,6 @@
 
       const snapshot = data?.props?.pageProps?.gameSnapshot;
       if (!snapshot) {
-        // Log what's in pageProps
         const pp = data?.props?.pageProps;
         if (pp && !structureLogged) {
           logToBackground('pageProps: ' + Object.keys(pp).join(', '));
