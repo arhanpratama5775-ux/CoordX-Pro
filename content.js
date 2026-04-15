@@ -1,12 +1,12 @@
 /**
- * CoordX Pro — Content Script (v1.8.5)
+ * CoordX Pro — Content Script (v1.8.6)
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV185Injected) return;
-  window.__coordxProV185Injected = true;
+  if (window.__coordxProV186Injected) return;
+  window.__coordxProV186Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -14,11 +14,13 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.5 loaded');
-  logToBackground('Content v1.8.5 loaded');
+  console.log('[CoordX Pro] Content v1.8.6 loaded');
+  logToBackground('Content v1.8.6 loaded');
 
   let lastSentLat = null;
   let lastSentLng = null;
+  
+  // Block only the exact coords (not nearby)
   let blockedLat = null;
   let blockedLng = null;
   let blockUntil = 0;
@@ -37,12 +39,15 @@
 
     const now = Date.now();
 
+    // Block EXACT coords only (not nearby)
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
-      if (Math.abs(lat - blockedLat) < 0.001 && Math.abs(lng - blockedLng) < 0.001) {
+      if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
+        // Exact same coords blocked
         return false;
       }
     }
 
+    // Skip if same as last sent
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -74,13 +79,11 @@
     const data = event.data;
     if (!data) return;
 
-    // Handle coords
     if (data.type === 'COORDX_COORDS') {
       const { lat, lng, source } = data;
       sendCoords(lat, lng, source);
     }
     
-    // Handle logs from main world
     if (data.type === 'COORDX_LOG') {
       logToBackground('[MW] ' + data.message);
     }
@@ -99,7 +102,6 @@
       blockedLat = null;
       blockedLng = null;
       blockUntil = 0;
-      // Re-inject main world
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -119,16 +121,19 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Next button
+  // Next button - block EXACT coords only
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
+      logToBackground('NEXT clicked');
+      
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 20000;
-        logToBackground('Block: ' + blockedLat.toFixed(4));
+        blockUntil = Date.now() + 10000; // 10 seconds
+        logToBackground('Block exact: ' + blockedLat.toFixed(4));
       }
+      
       lastSentLat = null;
       lastSentLng = null;
     }
