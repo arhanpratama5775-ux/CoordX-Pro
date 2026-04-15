@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.6.0)
+ * CoordX Pro — Side Panel Script (v1.6.1)
  */
 
 (function () {
@@ -37,18 +37,8 @@
   let currentCoords = null;
   let geocodeTimeout = null;
   let logsVisible = false;
-  let lastLogTime = 0;
 
-  function log(msg) {
-    console.log('[CoordX Pro]', msg);
-    const now = Date.now();
-    if (now - lastLogTime > 300) {
-      lastLogTime = now;
-      chrome.runtime.sendMessage({ type: 'log', message: '[SIDE] ' + msg }).catch(() => {});
-    }
-  }
-
-  log('Side panel v1.6.0 loaded');
+  console.log('[CoordX Pro] Side panel v1.6.1 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
@@ -60,7 +50,7 @@
     }
 
     if (storage.lastCoords) {
-      updateUI(storage.lastCoords.lat, storage.lastCoords.lng, 'init');
+      updateUI(storage.lastCoords.lat, storage.lastCoords.lng);
     } else {
       els.statusText.textContent = 'Searching...';
     }
@@ -112,8 +102,8 @@
 
   /* ─── UI Update ──────────────────────────────────────── */
 
-  function updateUI(lat, lng, source) {
-    log('UI update: ' + lat.toFixed(4) + ', ' + lng.toFixed(4) + ' (' + source + ')');
+  function updateUI(lat, lng) {
+    console.log('[CoordX Pro] Update UI:', lat, lng);
     
     currentCoords = { lat, lng };
     
@@ -127,18 +117,20 @@
     els.statusText.classList.add('found');
     
     // Send to map iframe
-    const sendToMap = () => {
-      if (els.mapFrame?.contentWindow) {
-        els.mapFrame.contentWindow.postMessage({
-          type: 'updateCoords',
-          lat, lng
-        }, '*');
-      }
-    };
-    
-    sendToMap();
-    setTimeout(sendToMap, 100);
-    setTimeout(sendToMap, 300);
+    if (els.mapFrame?.contentWindow) {
+      els.mapFrame.contentWindow.postMessage({
+        type: 'updateCoords',
+        lat, lng
+      }, '*');
+      
+      // Retry a few times
+      setTimeout(() => {
+        els.mapFrame?.contentWindow?.postMessage({ type: 'updateCoords', lat, lng }, '*');
+      }, 100);
+      setTimeout(() => {
+        els.mapFrame?.contentWindow?.postMessage({ type: 'updateCoords', lat, lng }, '*');
+      }, 300);
+    }
     
     // Fetch geocoding
     reverseGeocode(lat, lng);
@@ -151,7 +143,7 @@
     
     if (changes.lastCoords?.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      updateUI(lat, lng, 'storage');
+      updateUI(lat, lng);
     }
   });
 

@@ -1,134 +1,150 @@
 /**
- * CoordX Pro — Content Script (v1.6.0)
+ * CoordX Pro — Content Script (v1.6.1)
  * 
- * Inject script into page context to access React/Next.js state
+ * Simple and reliable approach
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV160Injected) return;
-  window.__coordxProV160Injected = true;
+  if (window.__coordxProV161Injected) return;
+  window.__coordxProV161Injected = true;
 
-  console.log('[CoordX Pro] Content script v1.6.0 loaded');
+  console.log('[CoordX Pro] Content script v1.6.1 loaded');
 
-  // Inject script into page context
-  const script = document.createElement('script');
-  script.textContent = `
-    (function() {
-      let lastCoords = null;
-      let lastRound = -1;
-      
-      function getCoords() {
-        // Try __NEXT_DATA__
-        const nextData = document.getElementById('__NEXT_DATA__');
-        if (nextData) {
-          try {
-            const data = JSON.parse(nextData.textContent);
-            const snapshot = data.props?.pageProps?.gameSnapshot;
-            if (snapshot?.rounds) {
-              const roundIndex = snapshot.round ?? 0;
-              const rounds = snapshot.rounds;
-              
-              if (roundIndex >= 0 && roundIndex < rounds.length) {
-                const r = rounds[roundIndex];
-                if (r.lat && r.lng) {
-                  return { lat: r.lat, lng: r.lng, round: roundIndex, total: rounds.length };
-                }
-              }
-            }
-          } catch(e) {}
-        }
-        
-        // Try window.__RENDER_DATA__ or similar
-        if (window.__INITIAL_STATE__) {
-          const state = window.__INITIAL_STATE__;
-          // Add more patterns as needed
-        }
-        
-        return null;
+  let lastLat = null;
+  let lastLng = null;
+
+  function isValidCoord(lat, lng) {
+    return !isNaN(lat) && !isNaN(lng) &&
+      lat >= -90 && lat <= 90 &&
+      lng >= -180 && lng <= 180 &&
+      !(lat === 0 && lng === 0) &&
+      Math.abs(lat) > 0.001 &&
+      Math.abs(lng) > 0.001;
+  }
+
+  function sendCoords(lat, lng, source) {
+    if (!isValidCoord(lat, lng)) return;
+    
+    // Skip if same
+    if (lastLat !== null && lastLng !== null) {
+      if (Math.abs(lastLat - lat) < 0.0001 && Math.abs(lastLng - lng) < 0.0001) {
+        return;
       }
-      
-      function checkAndSend() {
-        const coords = getCoords();
-        if (!coords) return;
-        
-        // Only send if round changed or coords different
-        if (coords.round !== lastRound || !lastCoords || 
-            Math.abs(lastCoords.lat - coords.lat) > 0.0001 ||
-            Math.abs(lastCoords.lng - coords.lng) > 0.0001) {
-          
-          lastCoords = { lat: coords.lat, lng: coords.lng };
-          lastRound = coords.round;
-          
-          // Send to extension
-          window.postMessage({
-            type: 'COORDX_COORDS',
-            lat: coords.lat,
-            lng: coords.lng,
-            round: coords.round + 1,
-            total: coords.total
-          }, '*');
-          
-          console.log('[CoordX Pro] Page found:', coords.lat.toFixed(4), coords.lng.toFixed(4), 'Round', coords.round + 1);
-        }
-      }
-      
-      // Check on load
-      setTimeout(checkAndSend, 100);
-      setTimeout(checkAndSend, 500);
-      setTimeout(checkAndSend, 1500);
-      setTimeout(checkAndSend, 3000);
-      
-      // Check periodically
-      setInterval(checkAndSend, 2000);
-      
-      // Check on URL change
-      let lastUrl = location.href;
-      setInterval(() => {
-        if (location.href !== lastUrl) {
-          lastUrl = location.href;
-          lastRound = -1; // Reset round tracking
-          lastCoords = null;
-          setTimeout(checkAndSend, 500);
-          setTimeout(checkAndSend, 1500);
-        }
-      }, 500);
-      
-      // Check on click (NEXT button)
-      document.addEventListener('click', (e) => {
-        const text = (e.target.innerText || '').toUpperCase();
-        if (text.includes('NEXT')) {
-          lastRound = -1; // Force re-check
-          setTimeout(checkAndSend, 300);
-          setTimeout(checkAndSend, 1000);
-        }
-      }, true);
-      
-      console.log('[CoordX Pro] Page script injected');
-    })();
-  `;
-  
-  (document.head || document.documentElement).appendChild(script);
-  script.remove();
-
-  // Listen for messages from page script
-  window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
-    if (event.data?.type !== 'COORDX_COORDS') return;
+    }
     
-    const { lat, lng, round, total } = event.data;
+    lastLat = lat;
+    lastLng = lng;
     
-    console.log('[CoordX Pro] Received from page:', lat.toFixed(4), lng.toFixed(4), 'Round', round);
+    console.log('[CoordX Pro] Found:', lat.toFixed(4), lng.toFixed(4), 'via', source);
     
-    // Send to background
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
         lat, lng,
-        source: `page_round_${round}`
+        source: source
       });
-    } catch (e) {}
-  });
+    } catch (e) {
+      console.error('[CoordX Pro] Send failed:', e);
+    }
+  }
+
+  function parseGame() {
+    // Method 1: __NEXT_DATA__
+    const script = document.getElementById('__NEXT_DATA__');
+    if (script) {
+      try {
+        const data = JSON.parse(script.textContent);
+        const snapshot = data.props?.pageProps?.gameSnapshot;
+        
+        if (snapshot?.rounds) {
+          const roundIndex = snapshot.round ?? 0;
+          const rounds = snapshot.rounds;
+          
+          if (roundIndex >= 0 && roundIndex < rounds.length) {
+            const r = rounds[roundIndex];
+            if (r.lat && r.lng) {
+              sendCoords(r.lat, r.lng, 'next_data_r' + (roundIndex + 1));
+              return true;
+            }
+          }
+        }
+      } catch (e) {}
+    }
+    
+    // Method 2: Check URL for location params
+    const url = window.location.href;
+    const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (locMatch) {
+      const lat = parseFloat(locMatch[1]);
+      const lng = parseFloat(locMatch[2]);
+      if (isValidCoord(lat, lng)) {
+        sendCoords(lat, lng, 'url');
+        return true;
+      }
+    }
+    
+    // Method 3: Check for iframes with location
+    const iframes = document.querySelectorAll('iframe');
+    for (const iframe of iframes) {
+      if (iframe.src && iframe.src.includes('location=')) {
+        const match = iframe.src.match(/location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+        if (match) {
+          const lat = parseFloat(match[1]);
+          const lng = parseFloat(match[2]);
+          if (isValidCoord(lat, lng)) {
+            sendCoords(lat, lng, 'iframe');
+            return true;
+          }
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  // Initial parse
+  function init() {
+    parseGame();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // Retry on load
+  setTimeout(init, 500);
+  setTimeout(init, 1500);
+  setTimeout(init, 3000);
+
+  // Poll every 2 seconds
+  setInterval(parseGame, 2000);
+
+  // On URL change
+  let lastUrl = location.href;
+  setInterval(() => {
+    if (location.href !== lastUrl) {
+      lastUrl = location.href;
+      lastLat = null;  // Reset to allow new coords
+      lastLng = null;
+      setTimeout(parseGame, 300);
+      setTimeout(parseGame, 1000);
+    }
+  }, 500);
+
+  // On click
+  document.addEventListener('click', (e) => {
+    const text = (e.target?.innerText || '').toUpperCase();
+    if (text.includes('NEXT')) {
+      lastLat = null;  // Reset to force send new coords
+      lastLng = null;
+      setTimeout(parseGame, 300);
+      setTimeout(parseGame, 1000);
+      setTimeout(parseGame, 2000);
+    }
+  }, true);
 
 })();
