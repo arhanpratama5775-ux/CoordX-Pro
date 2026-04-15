@@ -1,14 +1,15 @@
 /**
- * CoordX Pro — Content Script (v1.7.9)
+ * CoordX Pro — Content Script (v1.8.0)
  * 
- * Block same coords for longer period after NEXT
+ * New approach: Intercept API calls and watch DOM
+ * __NEXT_DATA__ is static and doesn't update between rounds
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV179Injected) return;
-  window.__coordxProV179Injected = true;
+  if (window.__coordxProV180Injected) return;
+  window.__coordxProV180Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,19 +17,14 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.7.9 loaded');
-  logToBackground('Content v1.7.9 loaded');
+  console.log('[CoordX Pro] Content v1.8.0 loaded');
+  logToBackground('Content v1.8.0 loaded');
 
   let lastSentLat = null;
   let lastSentLng = null;
-  let lastRoundIndex = -1;
-  let lastRoundToken = '';
-  let structureLogged = false;
-  
-  // Coords to block after NEXT
   let blockedLat = null;
   let blockedLng = null;
-  let blockUntil = 0;  // timestamp
+  let blockUntil = 0;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -40,22 +36,13 @@
   }
 
   function sendCoords(lat, lng, source) {
-    if (!isValidCoord(lat, lng)) {
-      return false;
-    }
+    if (!isValidCoord(lat, lng)) return false;
 
     const now = Date.now();
 
-    // Check if these coords are blocked
+    // Check if blocked
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
-      const isBlocked = 
-        Math.abs(lat - blockedLat) < 0.001 &&
-        Math.abs(lng - blockedLng) < 0.001;
-      
-      if (isBlocked) {
-        // Still blocked, skip
-        const remaining = Math.ceil((blockUntil - now) / 1000);
-        logToBackground('Blocked same coords (' + remaining + 's remaining)');
+      if (Math.abs(lat - blockedLat) < 0.001 && Math.abs(lng - blockedLng) < 0.001) {
         return false;
       }
     }
@@ -71,7 +58,6 @@
     lastSentLng = lng;
 
     logToBackground('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-    console.log('[CoordX Pro] Found:', lat, lng, 'via', source);
 
     try {
       chrome.runtime.sendMessage({
@@ -86,86 +72,134 @@
     }
   }
 
-  // Extract coordinates from gameSnapshot
-  function extractFromGameSnapshot(snapshot) {
-    if (!snapshot) return null;
+  // Method 1: Try __NEXT_DATA__ (works on initial load)
+  function tryNextData() {
+    const script = document.getElementById('__NEXT_DATA__');
+    if (!script || !script.textContent) return null;
 
-    const rounds = snapshot.rounds;
-    if (!rounds || !Array.isArray(rounds) || rounds.length === 0) {
-      return null;
-    }
+    try {
+      const data = JSON.parse(script.textContent);
+      const snapshot = data?.props?.pageProps?.gameSnapshot;
+      
+      if (!snapshot?.rounds) return null;
 
-    // Log structure once
-    if (!structureLogged) {
-      const r0 = rounds[0];
-      if (r0) {
-        logToBackground('round[0] keys: ' + Object.keys(r0).slice(0, 10).join(', '));
+      let roundIndex = snapshot.round ?? 0;
+      const rounds = snapshot.rounds;
+      
+      if (roundIndex >= rounds.length) roundIndex = rounds.length - 1;
+      if (roundIndex < 0) roundIndex = 0;
+
+      const r = rounds[roundIndex];
+      if (!r) return null;
+
+      const lat = r.lat ?? r.latitude;
+      const lng = r.lng ?? r.longitude;
+      
+      if (isValidCoord(lat, lng)) {
+        return { lat, lng, source: 'next_data[' + roundIndex + ']' };
       }
-      structureLogged = true;
-    }
-
-    // Get current round index
-    let roundIndex = snapshot.round ?? 0;
-    if (roundIndex >= rounds.length) roundIndex = rounds.length - 1;
-    if (roundIndex < 0) roundIndex = 0;
-
-    const r = rounds[roundIndex];
-    if (!r) return null;
-
-    const lat = r.lat ?? r.latitude ?? r.y ?? r.location?.lat ?? r.location?.latitude;
-    const lng = r.lng ?? r.lon ?? r.longitude ?? r.x ?? r.location?.lng ?? r.location?.longitude;
-
-    if (!isValidCoord(lat, lng)) return null;
-
-    // Check if round number changed
-    const token = snapshot.token ?? snapshot.gameId ?? '';
-    if (roundIndex !== lastRoundIndex || token !== lastRoundToken) {
-      logToBackground('Round changed: ' + lastRoundIndex + ' → ' + roundIndex);
-      lastRoundIndex = roundIndex;
-      lastRoundToken = token;
-    }
-
-    return { lat, lng, roundIndex, source: 'rounds[' + roundIndex + ']' };
+    } catch (e) {}
+    
+    return null;
   }
 
-  // Extract from challenge object
-  function extractFromChallenge(challenge) {
-    if (!challenge) return null;
-
-    if (challenge.location) {
-      const loc = challenge.location;
-      const lat = loc.lat ?? loc.latitude ?? loc.y;
-      const lng = loc.lng ?? loc.lon ?? loc.longitude ?? loc.x;
-      if (isValidCoord(lat, lng)) {
-        const token = challenge.id ?? challenge.token ?? '';
-        if (token !== lastRoundToken) {
-          logToBackground('Challenge changed');
-          lastRoundToken = token;
+  // Method 2: Intercept fetch/XHR
+  function setupNetworkInterceptor() {
+    // Intercept fetch
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch.apply(this, args);
+      
+      // Clone to read body
+      const clone = response.clone();
+      
+      try {
+        const url = args[0]?.url || args[0] || '';
+        
+        // Check if it's a GeoGuessr API call
+        if (typeof url === 'string' && url.includes('geoguessr.com') && url.includes('/api/')) {
+          clone.json().then(data => {
+            processApiResponse(url, data);
+          }).catch(() => {});
         }
-        return { lat, lng, source: 'challenge.location' };
-      }
+      } catch (e) {}
+      
+      return response;
+    };
+
+    // Intercept XHR
+    const originalXHR = window.XMLHttpRequest;
+    window.XMLHttpRequest = function() {
+      const xhr = new originalXHR();
+      const originalOpen = xhr.open;
+      const originalSend = xhr.send;
+      
+      let url = '';
+      
+      xhr.open = function(method, u, ...rest) {
+        url = u;
+        return originalOpen.apply(this, [method, u, ...rest]);
+      };
+      
+      xhr.send = function(...args) {
+        xhr.addEventListener('load', function() {
+          if (url.includes('geoguessr.com') && url.includes('/api/')) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              processApiResponse(url, data);
+            } catch (e) {}
+          }
+        });
+        return originalSend.apply(this, args);
+      };
+      
+      return xhr;
+    };
+  }
+
+  // Process API responses
+  function processApiResponse(url, data) {
+    logToBackground('API: ' + url.split('?')[0].split('/').slice(-2).join('/'));
+    
+    // Try to extract coords from various API responses
+    const coords = extractCoordsFromObject(data);
+    if (coords) {
+      sendCoords(coords.lat, coords.lng, 'api:' + coords.source);
+    }
+  }
+
+  // Recursively search for coords in any object
+  function extractCoordsFromObject(obj, path = '', depth = 0) {
+    if (depth > 5) return null;
+    if (!obj || typeof obj !== 'object') return null;
+
+    // Check if this object has lat/lng
+    if (isValidCoord(obj.lat, obj.lng)) {
+      return { lat: obj.lat, lng: obj.lng, source: path || 'obj' };
+    }
+    if (isValidCoord(obj.latitude, obj.longitude)) {
+      return { lat: obj.latitude, lng: obj.longitude, source: path || 'obj' };
+    }
+    if (obj.location && isValidCoord(obj.location.lat, obj.location.lng)) {
+      return { lat: obj.location.lat, lng: obj.location.lng, source: path + '.location' };
     }
 
-    if (challenge.rounds && Array.isArray(challenge.rounds)) {
-      const roundIndex = challenge.round ?? challenge.currentRound ?? 0;
-      let idx = roundIndex;
-      
-      if (idx >= challenge.rounds.length) idx = challenge.rounds.length - 1;
-      if (idx < 0) idx = 0;
-      
-      if (idx < challenge.rounds.length) {
-        const r = challenge.rounds[idx];
-        if (r) {
-          const lat = r.lat ?? r.latitude ?? r.location?.lat;
-          const lng = r.lng ?? r.longitude ?? r.location?.lng;
-          if (isValidCoord(lat, lng)) {
-            const token = (challenge.id ?? '') + '_' + idx;
-            if (token !== lastRoundToken) {
-              logToBackground('Challenge round changed');
-              lastRoundToken = token;
-            }
-            return { lat, lng, roundIndex: idx, source: 'challenge.rounds[' + idx + ']' };
-          }
+    // Search in arrays
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i++) {
+        const result = extractCoordsFromObject(obj[i], path + '[' + i + ']', depth + 1);
+        if (result) return result;
+      }
+    } else {
+      // Search in object properties
+      for (const key of Object.keys(obj)) {
+        if (key.toLowerCase().includes('round') || 
+            key.toLowerCase().includes('location') ||
+            key.toLowerCase().includes('coord') ||
+            key.toLowerCase().includes('game') ||
+            key === 'data') {
+          const result = extractCoordsFromObject(obj[key], path + '.' + key, depth + 1);
+          if (result) return result;
         }
       }
     }
@@ -173,16 +207,47 @@
     return null;
   }
 
-  // WorldGuessr
+  // Method 3: Watch for Street View panorama changes
+  function watchStreetView() {
+    // Check for panorama in window
+    setInterval(() => {
+      try {
+        // Try to find panorama in various places
+        const sv = window.google?.maps?.StreetViewPanorama;
+        if (sv) {
+          // Try to get position from panorama instances
+          const panoramas = document.querySelectorAll('[style*="position"]');
+          // This is a long shot, but worth trying
+        }
+      } catch (e) {}
+    }, 1000);
+  }
+
+  // Method 4: Watch URL for changes that might indicate new round
+  let lastCheckedUrl = '';
+  function watchUrl() {
+    if (window.location.href !== lastCheckedUrl) {
+      lastCheckedUrl = window.location.href;
+      logToBackground('URL: ' + window.location.href);
+      
+      // Try to extract from URL if possible
+      const match = window.location.href.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        if (isValidCoord(lat, lng)) {
+          sendCoords(lat, lng, 'url');
+        }
+      }
+    }
+  }
+
+  // WorldGuessr detection
   function detectWorldGuessr() {
     const url = window.location.href;
     const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
     if (locMatch) {
-      const lat = parseFloat(locMatch[1]);
-      const lng = parseFloat(locMatch[2]);
-      if (isValidCoord(lat, lng)) {
-        return { lat, lng, source: 'url' };
-      }
+      return { lat: parseFloat(locMatch[1]), lng: parseFloat(locMatch[2]), source: 'url' };
     }
 
     const iframes = document.querySelectorAll('iframe');
@@ -190,11 +255,7 @@
       if (iframe.src && iframe.src.includes('location=')) {
         const match = iframe.src.match(/location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
         if (match) {
-          const lat = parseFloat(match[1]);
-          const lng = parseFloat(match[2]);
-          if (isValidCoord(lat, lng)) {
-            return { lat, lng, source: 'iframe' };
-          }
+          return { lat: parseFloat(match[1]), lng: parseFloat(match[2]), source: 'iframe' };
         }
       }
     }
@@ -210,48 +271,21 @@
       const result = detectWorldGuessr();
       if (result) {
         sendCoords(result.lat, result.lng, result.source);
-        return true;
       }
-      return false;
+      return;
     }
 
     if (hostname.includes('geoguessr.com')) {
-      const script = document.getElementById('__NEXT_DATA__');
-      if (!script || !script.textContent) return false;
-
-      let data;
-      try {
-        data = JSON.parse(script.textContent);
-      } catch (e) {
-        return false;
+      // Try __NEXT_DATA__ first
+      const result = tryNextData();
+      if (result) {
+        sendCoords(result.lat, result.lng, result.source);
       }
-
-      const pp = data?.props?.pageProps;
-      if (!pp) return false;
-
-      // Try gameSnapshot first
-      if (pp.gameSnapshot) {
-        const result = extractFromGameSnapshot(pp.gameSnapshot);
-        if (result) {
-          sendCoords(result.lat, result.lng, result.source);
-          return true;
-        }
-      }
-
-      // Try challenge
-      if (pp.challenge) {
-        const result = extractFromChallenge(pp.challenge);
-        if (result) {
-          sendCoords(result.lat, result.lng, result.source);
-          return true;
-        }
-      }
-
-      return false;
     }
-
-    return false;
   }
+
+  // Setup network interceptor
+  setupNetworkInterceptor();
 
   // Force check listener
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -259,12 +293,9 @@
       logToBackground('Force check');
       lastSentLat = null;
       lastSentLng = null;
-      lastRoundIndex = -1;
-      lastRoundToken = '';
       blockedLat = null;
       blockedLng = null;
       blockUntil = 0;
-      structureLogged = false;
       detect();
       sendResponse({ success: true });
     }
@@ -273,6 +304,7 @@
   // Init
   function init() {
     detect();
+    watchUrl();
   }
 
   if (document.readyState === 'loading') {
@@ -283,10 +315,10 @@
 
   setTimeout(init, 500);
   setTimeout(init, 1500);
-  setTimeout(init, 3000);
 
-  // Poll every 500ms
-  setInterval(detect, 500);
+  // Poll
+  setInterval(detect, 1000);
+  setInterval(watchUrl, 500);
 
   // URL change
   let lastUrl = location.href;
@@ -296,43 +328,31 @@
       lastUrl = location.href;
       lastSentLat = null;
       lastSentLng = null;
-      lastRoundIndex = -1;
-      lastRoundToken = '';
-      structureLogged = false;
       setTimeout(detect, 300);
       setTimeout(detect, 1000);
-      setTimeout(detect, 2000);
     }
   }, 200);
 
-  // Next button - BLOCK current coords for 5 seconds
+  // Next button
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
       logToBackground('Button: ' + text);
       
-      // Block current coords for 5 seconds
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 5000;  // 5 seconds
-        logToBackground('Blocking coords for 5s: ' + blockedLat.toFixed(4) + ', ' + blockedLng.toFixed(4));
+        blockUntil = Date.now() + 10000;  // 10 seconds
+        logToBackground('Block 10s: ' + blockedLat.toFixed(4));
       }
       
-      // Reset round tracking
-      lastRoundIndex = -1;
-      lastRoundToken = '';
+      lastSentLat = null;
+      lastSentLng = null;
       
-      // Check multiple times
-      setTimeout(detect, 100);
-      setTimeout(detect, 300);
-      setTimeout(detect, 500);
-      setTimeout(detect, 1000);
-      setTimeout(detect, 1500);
-      setTimeout(detect, 2000);
-      setTimeout(detect, 3000);
-      setTimeout(detect, 4000);
-      setTimeout(detect, 5000);
+      // Extended check schedule
+      for (let i = 1; i <= 10; i++) {
+        setTimeout(detect, i * 1000);
+      }
     }
   }, true);
 
