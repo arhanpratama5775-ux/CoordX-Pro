@@ -31,7 +31,7 @@ function log(msg) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.1');
+  log('Extension installed v1.8.2');
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -106,4 +106,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.8.1 ready');
+log('Background v1.8.2 ready');
