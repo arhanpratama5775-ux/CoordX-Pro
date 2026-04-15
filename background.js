@@ -1,18 +1,14 @@
 /**
- * CoordX Pro — Background Service Worker (v1.4.0)
- * 
- * - Added in-extension logging system for debugging on mobile
- * - DUAL APPROACH:
- *   1. Content script for WorldGuessr (iframe detection)
- *   2. webRequest API for GeoGuessr (intercept API calls directly)
+ * CoordX Pro — Background Service Worker (v1.5.5)
  */
 
 /* ─── State ─────────────────────────────────────────────── */
 
 let lastCoords = null;
 let trackingEnabled = true;
-let allRounds = []; // Store all rounds for GeoGuessr
+let allRounds = [];
 let currentRoundIndex = 0;
+let lastLogTime = 0;
 
 const SUPPORTED_SITES = [
   'geoguessr.com',
@@ -21,51 +17,47 @@ const SUPPORTED_SITES = [
   'crazygames.com'
 ];
 
-/* ─── In-Extension Logging System ───────────────────────── */
+/* ─── Logging (rate-limited) ────────────────────────────── */
 
 const LOG_KEY = 'coordx_logs';
-const MAX_LOGS = 100;
+const MAX_LOGS = 50;
 
 async function addLog(message, time = new Date().toISOString()) {
   try {
     const result = await chrome.storage.local.get([LOG_KEY]);
     let logs = result[LOG_KEY] || [];
-    
-    // Add new log
     logs.push({ time, message });
-    
-    // Keep only last MAX_LOGS
     if (logs.length > MAX_LOGS) {
       logs = logs.slice(-MAX_LOGS);
     }
-    
     await chrome.storage.local.set({ [LOG_KEY]: logs });
-  } catch (e) {
-    console.error('[CoordX Pro] Failed to save log:', e);
-  }
+  } catch (e) {}
 }
 
 function log(...args) {
   const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
   console.log('[CoordX Pro]', msg);
-  addLog(msg);
+  
+  // Rate limit
+  const now = Date.now();
+  if (now - lastLogTime > 500) {
+    lastLogTime = now;
+    addLog(msg);
+  }
 }
 
 /* ─── Side Panel Management ─────────────────────────────── */
 
 function initSidePanel() {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-    .catch(err => console.warn('[CoordX Pro] setPanelBehavior failed:', err));
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 }
 
 chrome.runtime.onInstalled.addListener(() => {
   initSidePanel();
   chrome.storage.local.set({
     trackingEnabled: true,
-    lastCoords: null,
-    lastAddress: null
+    lastCoords: null
   });
-  log('Extension installed v1.4.0');
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -96,100 +88,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 /* ─── Helper Functions ─────────────────────────────────── */
 
 function isValidCoord(lat, lng) {
-  return (
-    !isNaN(lat) && !isNaN(lng) &&
+  return !isNaN(lat) && !isNaN(lng) &&
     lat >= -90 && lat <= 90 &&
     lng >= -180 && lng <= 180 &&
     !(lat === 0 && lng === 0) &&
     Math.abs(lat) > 0.001 &&
-    Math.abs(lng) > 0.001
-  );
-}
-
-function isDifferentCoord(lat, lng) {
-  if (!lastCoords) return true;
-  return (
-    Math.abs(lastCoords.lat - lat) > 0.0001 ||
-    Math.abs(lastCoords.lng - lng) > 0.0001
-  );
+    Math.abs(lng) > 0.001;
 }
 
 function processAndSendCoords(lat, lng, source) {
-  if (!isValidCoord(lat, lng)) {
-    log('⚠️ Invalid coords rejected:', lat, lng);
-    return;
-  }
+  if (!isValidCoord(lat, lng)) return;
 
-  // ALWAYS update and send - user might be on a new round
-  log(`✅ COORDS from ${source}:`, lat.toFixed(4), lng.toFixed(4));
+  log(`✅ ${source}: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+  
   lastCoords = { lat, lng };
   
-  // Save to storage and log
-  chrome.storage.local.set({ lastCoords: { lat, lng } }).then(() => {
-    log('💾 Saved to storage:', lat.toFixed(4), lng.toFixed(4));
-  }).catch(e => {
-    log('❌ Storage save failed:', e.message);
-  });
-
-  // Notify sidepanel via message (backup)
-  chrome.runtime.sendMessage({
-    type: 'coordFound',
-    lat,
-    lng,
-    source
-  }).then(() => {
-    log('📤 Sent coordFound message to sidepanel');
-  }).catch(e => {
-    log('⚠️ coordFound message failed:', e.message);
-  });
-}
-
-/* ─── GeoGuessr API Interception via webRequest ─────────── */
-
-// Parse response body from GeoGuessr API calls
-async function parseGeoGuessrResponse(responseBody) {
-  try {
-    const data = JSON.parse(responseBody);
-    log('Parsed GeoGuessr response');
-
-    // Check for gameSnapshot
-    if (data.gameSnapshot) {
-      const snapshot = data.gameSnapshot;
-      const currentRound = snapshot.round || 0;
-      
-      // Store all rounds
-      if (snapshot.rounds && Array.isArray(snapshot.rounds)) {
-        allRounds = snapshot.rounds;
-        log('Stored', allRounds.length, 'rounds, current:', currentRound);
-      }
-
-      // Get current round coords
-      if (snapshot.rounds && snapshot.rounds[currentRound]) {
-        const r = snapshot.rounds[currentRound];
-        if (isValidCoord(r.lat, r.lng)) {
-          currentRoundIndex = currentRound;
-          processAndSendCoords(r.lat, r.lng, 'geoguessr_api_round' + (currentRound + 1));
-        }
-      }
-    }
-
-    // Check for rounds array directly
-    if (data.rounds && Array.isArray(data.rounds)) {
-      data.rounds.forEach((r, i) => {
-        if (isValidCoord(r.lat, r.lng)) {
-          processAndSendCoords(r.lat, r.lng, 'geoguessr_rounds_' + (i + 1));
-        }
-      });
-    }
-
-    // Single location
-    if (isValidCoord(data.lat, data.lng)) {
-      processAndSendCoords(data.lat, data.lng, 'geoguessr_single');
-    }
-
-  } catch (e) {
-    log('Failed to parse response:', e.message);
-  }
+  // ONLY use storage - sidepanel listens to storage changes
+  chrome.storage.local.set({ lastCoords: { lat, lng } });
 }
 
 /* ─── Message Handling ────────────────────────────────── */
@@ -198,22 +113,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
 
     case 'log':
-      // Log from content script
       addLog(message.message, message.time);
       sendResponse({ success: true });
       break;
 
     case 'getLogs':
-      // Get all logs
       chrome.storage.local.get([LOG_KEY]).then(result => {
         sendResponse({ logs: result[LOG_KEY] || [] });
       });
       return true;
 
     case 'clearLogs':
-      // Clear all logs
       chrome.storage.local.set({ [LOG_KEY]: [] }).then(() => {
-        log('Logs cleared');
         sendResponse({ success: true });
       });
       return true;
@@ -222,78 +133,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       lastCoords = null;
       allRounds = [];
       currentRoundIndex = 0;
-      chrome.storage.local.remove(['lastCoords', 'lastAddress']);
-      log('Search reset');
+      chrome.storage.local.remove(['lastCoords']);
       sendResponse({ success: true });
-      break;
-
-    case 'getStatus':
-      sendResponse({
-        searching: true,
-        trackingEnabled,
-        lastCoords,
-        allRoundsCount: allRounds.length,
-        currentRound: currentRoundIndex + 1
-      });
       break;
 
     case 'toggleTracking':
       trackingEnabled = message.enabled;
       chrome.storage.local.set({ trackingEnabled });
-      log('Tracking toggled:', trackingEnabled);
       sendResponse({ success: true, trackingEnabled });
       break;
 
-    case 'getLastCoords':
-      chrome.storage.local.get(['lastCoords']).then(result => {
-        sendResponse(result.lastCoords || null);
-      });
-      return true;
-
     case 'contentCoords':
-      const { lat, lng, source } = message;
-
-      if (!isValidCoord(lat, lng)) {
-        log('Invalid coords from content:', lat, lng);
+      if (!isValidCoord(message.lat, message.lng)) {
         sendResponse({ success: false });
         return;
       }
 
-      // If source indicates a round number, use that
-      if (source && (source.includes('_r') || source.includes('round'))) {
-        const roundMatch = source.match(/r(\d+)/);
+      // Parse round number from source
+      if (message.source) {
+        const roundMatch = message.source.match(/r(\d+)/);
         if (roundMatch) {
-          const round = parseInt(roundMatch[1]);
-          if (round - 1 !== currentRoundIndex) {
-            log('Round from source:', round, '(was', currentRoundIndex + 1, ')');
-            currentRoundIndex = round - 1;
-            lastCoords = null; // Force new coords
-          }
+          currentRoundIndex = parseInt(roundMatch[1]) - 1;
         }
       }
 
-      processAndSendCoords(lat, lng, source);
-      sendResponse({ success: true, isNew: isDifferentCoord(lat, lng) });
+      processAndSendCoords(message.lat, message.lng, message.source);
+      sendResponse({ success: true });
       break;
 
     case 'geoGuessrRounds':
-      // Store all rounds from content script
       if (message.rounds && Array.isArray(message.rounds)) {
         allRounds = message.rounds;
         currentRoundIndex = message.currentRound || 0;
         
-        // Bounds check - ensure round index is valid
         if (currentRoundIndex >= allRounds.length) {
           currentRoundIndex = Math.max(0, allRounds.length - 1);
-          log('⚠️ Round index out of bounds, adjusted to', currentRoundIndex + 1);
         }
         
-        log('Received', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
-        
-        // Send current round coords
         if (allRounds[currentRoundIndex]) {
           const r = allRounds[currentRoundIndex];
-          processAndSendCoords(r.lat, r.lng, 'geoguessr_stored_round' + (currentRoundIndex + 1));
+          processAndSendCoords(r.lat, r.lng, 'round_' + (currentRoundIndex + 1));
         }
       }
       sendResponse({ success: true });
@@ -302,12 +181,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'advanceRound':
       if (currentRoundIndex < allRounds.length - 1) {
         currentRoundIndex++;
-        log('Advanced to round', currentRoundIndex + 1);
-        lastCoords = null; // Force new coords
-        
         if (allRounds[currentRoundIndex]) {
           const r = allRounds[currentRoundIndex];
-          processAndSendCoords(r.lat, r.lng, 'geoguessr_advanced_round' + (currentRoundIndex + 1));
+          processAndSendCoords(r.lat, r.lng, 'round_' + (currentRoundIndex + 1));
         }
       }
       sendResponse({ success: true, currentRound: currentRoundIndex + 1 });
@@ -318,4 +194,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.4.0 ready');
+log('Background v1.5.5 ready');

@@ -1,14 +1,13 @@
 /**
- * CoordX Pro — Map Script (v1.1.5)
+ * CoordX Pro — Map Script (v1.5.5)
  * 
- * Uses Leaflet with OpenStreetMap tiles.
- * Simple circle marker - no image dependencies.
+ * Simple marker only - no coords in popup
  */
 
 (function () {
   'use strict';
 
-  console.log('[CoordX Pro] Map script v1.1.5 loading...');
+  console.log('[CoordX Pro] Map loading...');
 
   // Initialize map
   const map = L.map('map', {
@@ -25,112 +24,73 @@
   }).addTo(map);
 
   let marker = null;
-  let lastLat = null;
-  let lastLng = null;
 
   function updateMarker(lat, lng) {
-    console.log('[CoordX Pro] Map: updateMarker called with', lat, lng);
+    console.log('[CoordX Pro] Map: updateMarker', lat, lng);
 
-    // Always remove old marker first
+    // Remove old marker
     if (marker) {
-      console.log('[CoordX Pro] Map: removing old marker');
       map.removeLayer(marker);
       marker = null;
     }
 
-    // Create new marker
+    // Create new marker - just a simple dot
     marker = L.circleMarker([lat, lng], {
-      radius: 12,
-      fillColor: '#6366f1',
+      radius: 10,
+      fillColor: '#ef4444',
       color: '#fff',
-      weight: 3,
+      weight: 2,
       opacity: 1,
       fillOpacity: 0.9
     }).addTo(map);
 
-    // Bind popup with coordinates
-    marker.bindPopup(`<div style="
-      font-family: -apple-system, sans-serif;
-      font-size: 11px;
-      font-weight: 600;
-      color: #e2e8f0;
-      background: rgba(15, 23, 42, 0.95);
-      padding: 6px 12px;
-      border-radius: 8px;
-    ">📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</div>`, {
-      closeButton: false,
-      className: 'coord-popup'
-    }).openPopup();
-
     // Fly to location
     map.flyTo([lat, lng], 15, {
-      duration: 0.8,
-      easeLinearity: 0.5
+      duration: 0.8
     });
 
-    lastLat = lat;
-    lastLng = lng;
-
-    console.log('[CoordX Pro] Map: marker updated successfully');
+    console.log('[CoordX Pro] Map: marker set');
   }
 
   // Listen for messages from sidepanel
   window.addEventListener('message', (event) => {
     const data = event.data;
     
-    if (!data || typeof data !== 'object') {
-      return;
-    }
+    if (!data || typeof data !== 'object') return;
 
     if (data.type === 'updateCoords') {
-      console.log('[CoordX Pro] Map: received updateCoords message', data);
-      
       const lat = parseFloat(data.lat);
       const lng = parseFloat(data.lng);
       
-      if (isNaN(lat) || isNaN(lng)) {
-        console.warn('[CoordX Pro] Map: invalid coords');
-        return;
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        updateMarker(lat, lng);
       }
-      
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-        console.warn('[CoordX Pro] Map: coords out of range');
-        return;
-      }
-
-      updateMarker(lat, lng);
     }
 
     if (data.type === 'resetMap') {
-      console.log('[CoordX Pro] Map: resetting');
       if (marker) {
         map.removeLayer(marker);
         marker = null;
       }
       map.flyTo([20, 0], 2, { duration: 0.5 });
-      lastLat = null;
-      lastLng = null;
     }
   });
 
-  // Fix map size after iframe loads
+  // Fix map size after load
   function fixMapSize() {
     map.invalidateSize();
-    console.log('[CoordX Pro] Map: size invalidated');
   }
 
   setTimeout(fixMapSize, 100);
   setTimeout(fixMapSize, 500);
   setTimeout(fixMapSize, 1000);
-  setTimeout(fixMapSize, 2000);
 
-  // Fix on visibility change
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       setTimeout(fixMapSize, 100);
     }
   });
 
-  console.log('[CoordX Pro] Map script ready');
+  console.log('[CoordX Pro] Map ready');
 
 })();

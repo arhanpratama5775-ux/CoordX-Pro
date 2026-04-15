@@ -54,7 +54,7 @@
     }
   }
 
-  log('🚀 Side panel v1.5.5 loaded');
+  log('Side panel loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
@@ -66,10 +66,9 @@
     }
 
     if (storage.lastCoords) {
-      currentCoords = storage.lastCoords;
       updateUI(storage.lastCoords.lat, storage.lastCoords.lng);
     } else {
-      els.statusText.textContent = 'Searching for location...';
+      els.statusText.textContent = 'Searching...';
     }
 
     loadLogs();
@@ -78,25 +77,22 @@
 
   init();
 
-  /* ─── Logs Management ───────────────────────────────── */
+  /* ─── Logs ───────────────────────────────────────────── */
 
   async function loadLogs() {
     try {
       const response = await chrome.runtime.sendMessage({ type: 'getLogs' });
       const logs = response?.logs || [];
-      
       els.logCount.textContent = logs.length;
       
       if (logs.length === 0) {
-        els.logsContent.innerHTML = '<div class="log-empty">No logs yet.</div>';
+        els.logsContent.innerHTML = '<div class="log-empty">No logs</div>';
         return;
       }
       
-      const recentLogs = logs.slice(-30);
-      els.logsContent.innerHTML = recentLogs.map(log => {
-        const time = log.time.split('T')[1]?.split('.')[0] || log.time;
-        const msg = escapeHtml(log.message);
-        return `<div class="log-entry"><span class="log-time">${time}</span> ${msg}</div>`;
+      els.logsContent.innerHTML = logs.slice(-30).map(log => {
+        const time = log.time.split('T')[1]?.split('.')[0] || '';
+        return `<div class="log-entry"><span class="log-time">${time}</span> ${escapeHtml(log.message)}</div>`;
       }).join('');
     } catch (e) {}
   }
@@ -123,7 +119,7 @@
   /* ─── UI Update ─────────────────────────────────────── */
 
   function updateUI(lat, lng) {
-    log('✅ UI update: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    log('Update: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
     
     currentCoords = { lat, lng };
     
@@ -133,42 +129,40 @@
     els.coordSection.classList.add('active');
     
     // Update status
-    els.statusText.textContent = 'Location found!';
+    els.statusText.textContent = 'Found!';
     els.statusText.classList.add('found');
-    els.statusText.classList.remove('paused');
     
-    // Update map
-    if (els.mapFrame?.contentWindow) {
-      els.mapFrame.contentWindow.postMessage({
-        type: 'updateCoords',
-        lat, lng
-      }, '*');
-    }
+    // Send to map - multiple attempts
+    const sendToMap = () => {
+      if (els.mapFrame?.contentWindow) {
+        els.mapFrame.contentWindow.postMessage({
+          type: 'updateCoords',
+          lat, lng
+        }, '*');
+      }
+    };
+    
+    sendToMap();
+    setTimeout(sendToMap, 100);
+    setTimeout(sendToMap, 300);
+    setTimeout(sendToMap, 500);
     
     // Fetch geocoding
     reverseGeocode(lat, lng);
   }
 
-  /* ─── Message Listener ──────────────────────────────── */
-
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'coordFound') {
-      log('📨 coordFound: ' + message.lat?.toFixed?.(4) + ', ' + message.lng?.toFixed?.(4));
-      updateUI(message.lat, message.lng);
-    }
-  });
+  /* ─── Listen for Storage Changes ────────────────────── */
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     
     if (changes.lastCoords?.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      log('📦 Storage: ' + lat?.toFixed?.(4) + ', ' + lng?.toFixed?.(4));
       updateUI(lat, lng);
     }
   });
 
-  /* ─── Reverse Geocoding ─────────────────────────────── */
+  /* ─── Geocoding ─────────────────────────────────────── */
 
   async function reverseGeocode(lat, lng) {
     els.addrDisplayName.textContent = 'Loading...';
@@ -184,56 +178,46 @@
           headers: { 'Accept': 'application/json', 'Accept-Language': 'en' }
         });
 
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-
         const data = await response.json();
-        
-        if (data.error) throw new Error(data.error);
-
         const addr = data.address || {};
         
         els.addrDisplayName.textContent = data.display_name || 'Unknown';
         els.addrNeighborhood.textContent = addr.neighbourhood || addr.hamlet || '—';
         els.addrSuburb.textContent = addr.suburb || addr.village || '—';
-        els.addrCity.textContent = addr.city || addr.town || addr.municipality || '—';
+        els.addrCity.textContent = addr.city || addr.town || '—';
         els.addrDistrict.textContent = addr.state_district || addr.county || '—';
-        els.addrState.textContent = addr.state || addr.region || '—';
+        els.addrState.textContent = addr.state || '—';
         els.addrPostcode.textContent = addr.postcode || '—';
         els.addrCountry.textContent = addr.country || '—';
         
         if (els.addrDisplayName.textContent.length > 80) {
           els.addrDisplayName.textContent = els.addrDisplayName.textContent.substring(0, 77) + '...';
         }
-
       } catch (err) {
         els.addrDisplayName.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        els.addrCountry.textContent = 'Address lookup failed';
+        els.addrCountry.textContent = 'Lookup failed';
       }
     }, 300);
   }
 
-  /* ─── Toggle Tracking ───────────────────────────────── */
+  /* ─── Controls ──────────────────────────────────────── */
 
   els.trackingToggle.addEventListener('change', async () => {
     const enabled = els.trackingToggle.checked;
     await chrome.runtime.sendMessage({ type: 'toggleTracking', enabled });
-    els.statusText.textContent = enabled ? 'Searching for location...' : 'Tracking paused';
-    els.statusText.classList.remove('found');
+    els.statusText.textContent = enabled ? 'Searching...' : 'Paused';
     els.statusText.classList.toggle('paused', !enabled);
   });
 
-  /* ─── Reset ─────────────────────────────────────────── */
-
   els.resetBtn.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ type: 'resetSearch' });
-
     currentCoords = null;
     els.latValue.textContent = '—';
     els.lngValue.textContent = '—';
     els.coordSection.classList.remove('active');
-    els.statusText.textContent = 'Searching for location...';
-    els.statusText.classList.remove('found', 'paused');
-
+    els.statusText.textContent = 'Searching...';
+    els.statusText.classList.remove('found');
+    
     els.addrDisplayName.textContent = '—';
     els.addrNeighborhood.textContent = '—';
     els.addrSuburb.textContent = '—';
@@ -249,28 +233,16 @@
     }
   });
 
-  /* ─── Copy Coordinates ──────────────────────────────── */
-
   els.copyCoordsBtn.addEventListener('click', () => {
     if (!currentCoords) return;
-
     const text = `${currentCoords.lat.toFixed(6)}, ${currentCoords.lng.toFixed(6)}`;
     navigator.clipboard.writeText(text).then(() => {
       els.copyCoordsBtn.classList.add('copied');
       els.copyCoordsBtn.querySelector('span').textContent = 'Copied!';
       setTimeout(() => {
         els.copyCoordsBtn.classList.remove('copied');
-        els.copyCoordsBtn.querySelector('span').textContent = 'Copy Coords';
+        els.copyCoordsBtn.querySelector('span').textContent = 'Copy';
       }, 1500);
-    }).catch(() => {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
     });
   });
 
