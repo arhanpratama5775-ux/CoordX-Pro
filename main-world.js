@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Main World Script (v1.8.10)
+ * CoordX Pro — Main World Script (v1.8.11)
  * 
- * Debug ALL data sources
+ * Filter out bounds/min/max - those are map area, not panorama location
  */
 
 (function() {
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.10');
+  console.log('[CoordX Pro] Main world v1.8.11');
 
   function sendCoords(lat, lng, source) {
     window.postMessage({
@@ -33,11 +33,25 @@
       !(lat === 0 && lng === 0);
   }
 
+  // Check if path is valid for panorama location (not map bounds)
+  function isValidCoordPath(path) {
+    const invalid = ['bounds', 'min', 'max', 'viewport', 'bbox',
+      'south', 'north', 'east', 'west', 'sw', 'ne', 'nw', 'se',
+      'topleft', 'bottomright', 'corner', 'edge', 'extent'];
+    
+    const lower = path.toLowerCase();
+    for (const bad of invalid) {
+      if (lower.includes(bad)) return false;
+    }
+    return true;
+  }
+
   let lastLat = null;
   let lastLng = null;
 
   function sendIfDifferent(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return;
+    if (!isValidCoordPath(source)) return;
     
     if (lastLat !== null && lastLng !== null) {
       if (Math.abs(lat - lastLat) < 0.0001 && Math.abs(lng - lastLng) < 0.0001) {
@@ -51,21 +65,19 @@
     sendCoords(lat, lng, source);
   }
 
-  // Recursively search for coords
-  function searchForCoords(obj, path = '', depth = 0) {
-    if (depth > 5 || !obj || typeof obj !== 'object') return [];
+  // Search for coords recursively
+  function searchForCoords(obj, path, depth) {
+    if (depth > 6 || !obj || typeof obj !== 'object') return [];
     
     const found = [];
     
-    // Check this object
     if (isValidCoord(obj.lat, obj.lng)) {
-      found.push({ lat: obj.lat, lng: obj.lng, path: path + '.lat/lng' });
-    }
-    if (isValidCoord(obj.latitude, obj.longitude)) {
-      found.push({ lat: obj.latitude, lng: obj.longitude, path: path + '.latitude/longitude' });
+      const p = path + '.lat/lng';
+      if (isValidCoordPath(p)) {
+        found.push({ lat: obj.lat, lng: obj.lng, path: p });
+      }
     }
     
-    // Check nested objects
     for (const key in obj) {
       const val = obj[key];
       if (val && typeof val === 'object') {
@@ -77,17 +89,11 @@
     return found;
   }
 
-  // Check __NEXT_DATA__
   let loggedOnce = false;
-  let lastContentHash = '';
 
   function checkNextData() {
     const script = document.getElementById('__NEXT_DATA__');
     if (!script?.textContent) return;
-
-    const contentHash = script.textContent.length + '_' + script.textContent.substring(0, 100);
-    const contentChanged = contentHash !== lastContentHash;
-    lastContentHash = contentHash;
 
     try {
       const data = JSON.parse(script.textContent);
@@ -95,16 +101,16 @@
       
       if (!pp) return;
 
-      // Log structure on first run or change
-      if (!loggedOnce || contentChanged) {
+      if (!loggedOnce) {
         sendLog('=== pageProps ===');
         for (const key of Object.keys(pp)) {
           const val = pp[key];
           if (val === null) {
             sendLog(key + ': null');
+          } else if (Array.isArray(val)) {
+            sendLog(key + ': Array[' + val.length + ']');
           } else if (typeof val === 'object') {
-            const subKeys = Object.keys(val).slice(0, 10);
-            sendLog(key + ': {' + subKeys.join(', ') + '}');
+            sendLog(key + ': {' + Object.keys(val).slice(0, 6).join(', ') + '}');
           } else {
             sendLog(key + ': ' + typeof val);
           }
@@ -112,38 +118,24 @@
         loggedOnce = true;
       }
 
-      // Search ALL objects for coords
-      const allFound = [];
-      
-      for (const key of ['gameSnapshot', 'challenge', 'map', 'creator', 'game']) {
-        if (pp[key]) {
-          const found = searchForCoords(pp[key], key);
-          if (found.length > 0) {
-            allFound.push(...found);
+      // Search all objects
+      for (const key of Object.keys(pp)) {
+        if (pp[key] && typeof pp[key] === 'object') {
+          const found = searchForCoords(pp[key], key, 0);
+          for (const f of found) {
+            sendIfDifferent(f.lat, f.lng, f.path);
           }
         }
       }
 
-      // Log found coords
-      if (allFound.length > 0) {
-        for (const f of allFound) {
-          sendIfDifferent(f.lat, f.lng, f.path);
-        }
-      }
-
-    } catch (e) {
-      sendLog('Error: ' + e.message);
-    }
+    } catch (e) {}
   }
 
-  // Also check window object
   function checkWindow() {
-    const keys = ['__GAME_STATE__', '__INITIAL_STATE__', 'gameState', 'INITIAL_DATA', '__DATA__'];
-    
+    const keys = ['__GAME_STATE__', '__INITIAL_STATE__', 'gameState'];
     for (const key of keys) {
       if (window[key]) {
-        sendLog('Found window.' + key);
-        const found = searchForCoords(window[key], key);
+        const found = searchForCoords(window[key], key, 0);
         for (const f of found) {
           sendIfDifferent(f.lat, f.lng, f.path);
         }
@@ -151,12 +143,10 @@
     }
   }
 
-  // Initialize
-  sendLog('Main world started');
+  sendLog('Main world v1.8.11');
   checkNextData();
   checkWindow();
 
-  // Poll
   setInterval(checkNextData, 1000);
   setInterval(checkWindow, 2000);
 
