@@ -130,7 +130,15 @@
       // Get current round from gameSnapshot.round (0-indexed)
       if (snapshot.round !== undefined) {
         currentRoundIndex = snapshot.round;
-        log('Current round index from gameSnapshot:', currentRoundIndex);
+        log('🎮 Current round from gameSnapshot.round:', snapshot.round, '(UI will show Round', snapshot.round + 1, ')');
+      }
+      
+      // Also check if there's a "progress" or "state" field
+      if (snapshot.progress !== undefined) {
+        log('📊 Progress:', snapshot.progress);
+      }
+      if (snapshot.state !== undefined) {
+        log('📊 State:', snapshot.state);
       }
 
       // Send all rounds to background
@@ -191,10 +199,15 @@
 
   /* ─── Send Current Round Coords ──────────────────────── */
 
+  let lastLoggedRound = -1;
+
   function sendCurrentRoundCoords(source) {
     const domRound = getCurrentRoundFromDOM();
     
-    log(`sendCurrentRoundCoords(${source}): domRound=${domRound}, currentIndex=${currentRoundIndex}, lastSent=${lastSentRound}`);
+    // Only log detailed info if something changed
+    if (domRound !== lastLoggedRound || source === 'init' || source.includes('click')) {
+      log(`sendCurrentRoundCoords(${source}): domRound=${domRound}, currentIndex=${currentRoundIndex}, lastSent=${lastSentRound}`);
+    }
     
     if (domRound !== currentRoundIndex && domRound >= 0 && domRound < allRounds.length) {
       log('🔄 Round changed:', currentRoundIndex + 1, '->', domRound + 1);
@@ -204,14 +217,14 @@
 
     if (currentRoundIndex !== lastSentRound && allRounds[currentRoundIndex]) {
       const r = allRounds[currentRoundIndex];
-      log('📍 Sending round', currentRoundIndex + 1, ':', r.lat, r.lng);
+      log('📍 Sending round', currentRoundIndex + 1, ':', r.lat.toFixed(4), r.lng.toFixed(4));
       sendCoords(r.lat, r.lng, 'geoguessr_r' + (currentRoundIndex + 1) + '_' + source);
       lastSentRound = currentRoundIndex;
+      lastLoggedRound = currentRoundIndex;
     } else if (!allRounds[currentRoundIndex]) {
-      log('⚠️ No round data for index', currentRoundIndex);
-    } else {
-      log('Already sent round', currentRoundIndex + 1);
+      log('⚠️ No round data for index', currentRoundIndex, '- total rounds:', allRounds.length);
     }
+    // Don't log "Already sent" anymore - it's noisy
   }
 
   /* ─── WorldGuessr: Iframe Detection ─────────────────── */
