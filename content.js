@@ -1,17 +1,15 @@
 /**
- * CoordX Pro — Content Script (v1.5.0)
+ * CoordX Pro — Content Script (v1.5.2)
  * 
- * Simplified approach:
- * - Watch __NEXT_DATA__ for changes using MutationObserver
- * - Send coords whenever round data changes
+ * Simplified approach with better logging
  */
 
 (function () {
   'use strict';
 
   // Prevent double injection
-  if (window.__coordxProV150Injected) return;
-  window.__coordxProV150Injected = true;
+  if (window.__coordxProV152Injected) return;
+  window.__coordxProV152Injected = true;
 
   /* ─── Logging ────────────────────────────────────────── */
 
@@ -23,36 +21,43 @@
     } catch (e) {}
   }
 
-  log('🚀 Content script v1.5.0 loaded');
+  log('🚀 Content script v1.5.2 loaded');
 
   /* ─── State ──────────────────────────────────────────── */
 
   let allRounds = [];
   let currentRoundIndex = 0;
-  let lastSentCoords = '';
+  let lastSentKey = '';  // Track what we last sent
+  let lastDataStr = '';
 
   /* ─── Validation ─────────────────────────────────────── */
 
   function isValidCoord(lat, lng) {
-    return !isNaN(lat) && !isNaN(lng) &&
+    const valid = !isNaN(lat) && !isNaN(lng) &&
       lat >= -90 && lat <= 90 &&
       lng >= -180 && lng <= 180 &&
       !(lat === 0 && lng === 0) &&
       Math.abs(lat) > 0.001 &&
       Math.abs(lng) > 0.001;
+    return valid;
   }
 
   /* ─── Send Coords ────────────────────────────────────── */
 
   function sendCoords(lat, lng, source) {
-    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-    if (key === lastSentCoords) {
-      // Skip sending same coords - but log it
+    log('📡 sendCoords called:', source, lat?.toFixed?.(4), lng?.toFixed?.(4));
+    
+    if (!isValidCoord(lat, lng)) {
+      log('❌ Invalid coords, not sending');
       return;
     }
-    lastSentCoords = key;
     
-    log('📍', source, ':', lat.toFixed(4), lng.toFixed(4));
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    
+    // Always send - remove the duplicate check since we want updates on every round
+    lastSentKey = key;
+    
+    log('📍 SENDING:', source, ':', lat.toFixed(4), lng.toFixed(4));
     
     try {
       chrome.runtime.sendMessage({
@@ -61,6 +66,8 @@
       }, (response) => {
         if (chrome.runtime.lastError) {
           log('❌ Send failed:', chrome.runtime.lastError.message);
+        } else {
+          log('✅ Send OK:', response);
         }
       });
     } catch (e) {
@@ -70,43 +77,72 @@
 
   /* ─── Parse __NEXT_DATA__ ────────────────────────────── */
 
-  let lastDataStr = '';
-
   function parseNextData() {
     const script = document.getElementById('__NEXT_DATA__');
-    if (!script) return false;
+    if (!script) {
+      log('⚠️ No __NEXT_DATA__ element');
+      return false;
+    }
 
     const dataStr = script.textContent;
-    if (dataStr === lastDataStr) return false; // No change
-    lastDataStr = dataStr;
+    if (dataStr === lastDataStr) {
+      // Data unchanged
+      return false;
+    }
     
-    // Reset lastSentCoords when new data is loaded
-    lastSentCoords = '';
+    lastDataStr = dataStr;
+    log('📄 New __NEXT_DATA__ detected');
 
     try {
       const data = JSON.parse(dataStr);
       const snapshot = data.props?.pageProps?.gameSnapshot;
-      if (!snapshot) return false;
+      
+      if (!snapshot) {
+        log('⚠️ No gameSnapshot in data');
+        return false;
+      }
 
       const rounds = snapshot.rounds;
-      if (!rounds || !Array.isArray(rounds)) return false;
+      if (!rounds || !Array.isArray(rounds)) {
+        log('⚠️ No rounds array');
+        return false;
+      }
 
-      // Store rounds
-      allRounds = rounds.filter(r => isValidCoord(r.lat, r.lng));
-      if (allRounds.length === 0) return false;
+      // Store rounds (only valid coords)
+      allRounds = [];
+      rounds.forEach((r, i) => {
+        if (isValidCoord(r.lat, r.lng)) {
+          allRounds.push({ lat: r.lat, lng: r.lng, index: i });
+        }
+      });
+      
+      if (allRounds.length === 0) {
+        log('⚠️ No valid rounds after filtering');
+        return false;
+      }
 
-      // Get current round - clamp to valid range
-      let roundIndex = snapshot.round || 0;
-      if (roundIndex >= allRounds.length) roundIndex = allRounds.length - 1;
+      // Get current round from snapshot
+      let roundIndex = snapshot.round;
+      if (roundIndex === undefined) roundIndex = 0;
+      
+      // Clamp to valid range
+      if (roundIndex >= allRounds.length) {
+        log('⚠️ roundIndex', roundIndex, '>= rounds', allRounds.length, '- clamping');
+        roundIndex = allRounds.length - 1;
+      }
       if (roundIndex < 0) roundIndex = 0;
+      
       currentRoundIndex = roundIndex;
 
       log('🎮 Loaded', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
 
       // Send current round coords
       const r = allRounds[currentRoundIndex];
+      log('🎯 Current round data:', r);
       if (r) {
         sendCoords(r.lat, r.lng, `round_${currentRoundIndex + 1}`);
+      } else {
+        log('❌ No round data at index', currentRoundIndex);
       }
 
       return true;
@@ -119,20 +155,17 @@
   /* ─── Watch for Changes ──────────────────────────────── */
 
   function setupObserver() {
-    // Watch __NEXT_DATA__ script element for changes
-    const observer = new MutationObserver(() => {
-      parseNextData();
+    const observer = new MutationObserver((mutations) => {
+      // Check if __NEXT_DATA__ changed
+      const script = document.getElementById('__NEXT_DATA__');
+      if (script && script.textContent !== lastDataStr) {
+        log('🔄 MutationObserver detected change');
+        parseNextData();
+      }
     });
 
-    // Observe the script element
-    const script = document.getElementById('__NEXT_DATA__');
-    if (script) {
-      observer.observe(script, { childList: true, characterData: true, subtree: true });
-    }
-
-    // Also observe body for __NEXT_DATA__ changes (in case script is replaced)
+    // Observe body for changes (script might be replaced)
     observer.observe(document.body, { childList: true, subtree: true });
-
     log('👀 Observer installed');
   }
 
@@ -142,41 +175,50 @@
     document.addEventListener('click', (e) => {
       const target = e.target;
       const text = (target.innerText || target.textContent || '').toUpperCase().trim();
+      const className = (target.className || '').toString().toLowerCase();
       
-      if (text === 'NEXT' || text.includes('NEXT')) {
-        log('🖱️ NEXT clicked');
+      // Check for NEXT button
+      if (text === 'NEXT' || text.includes('NEXT') || className.includes('next')) {
+        log('🖱️ NEXT clicked! text="' + text + '"');
         
-        // Advance round if possible
+        // Try to advance round
         if (currentRoundIndex < allRounds.length - 1) {
           currentRoundIndex++;
-          lastSentCoords = ''; // Force resend
           const r = allRounds[currentRoundIndex];
+          log('➡️ Advancing to round', currentRoundIndex + 1, ':', r);
           if (r) {
             sendCoords(r.lat, r.lng, `next_round_${currentRoundIndex + 1}`);
           }
         } else {
-          // At last round - check if __NEXT_DATA__ updated (maybe new game started)
-          log('⏳ At last round, checking for new data...');
+          // At last round - might be starting new game
+          log('⏳ At last round, will check for new data...');
           lastDataStr = ''; // Force reparse
-          setTimeout(parseNextData, 500);
+          setTimeout(() => {
+            parseNextData();
+          }, 500);
+          setTimeout(() => {
+            parseNextData();
+          }, 1500);
         }
       }
     }, true);
+    
+    log('👆 Click handler installed');
   }
 
   /* ─── DOM Round Detection ────────────────────────────── */
 
   function detectRoundFromDOM() {
-    // Look for "ROUND X / Y" in page
+    // Try data-qa attribute
     const roundEl = document.querySelector('[data-qa="round-number"]');
     if (roundEl) {
       const match = roundEl.textContent.match(/(\d+)\s*[\/\|]/);
       if (match) {
-        return parseInt(match[1]) - 1; // 0-indexed
+        return parseInt(match[1]) - 1;
       }
     }
     
-    // Fallback: search body text
+    // Try body text
     const bodyText = document.body?.innerText || '';
     const match = bodyText.match(/ROUND\s*(\d+)\s*[\/\|]/i);
     if (match) {
@@ -186,17 +228,26 @@
     return -1;
   }
 
-  // Periodic check for round changes
   function setupPeriodicCheck() {
     setInterval(() => {
-      const domRound = detectRoundFromDOM();
-      if (domRound >= 0 && domRound !== currentRoundIndex && domRound < allRounds.length) {
-        log('🔄 DOM says round', domRound + 1, '(was', currentRoundIndex + 1, ')');
-        currentRoundIndex = domRound;
-        lastSentCoords = '';
-        const r = allRounds[currentRoundIndex];
-        if (r) {
-          sendCoords(r.lat, r.lng, `dom_round_${currentRoundIndex + 1}`);
+      // Check if data changed
+      const script = document.getElementById('__NEXT_DATA__');
+      if (script && script.textContent !== lastDataStr) {
+        log('⏰ Periodic check found new data');
+        parseNextData();
+        return;
+      }
+      
+      // Check DOM for round changes
+      if (allRounds.length > 0) {
+        const domRound = detectRoundFromDOM();
+        if (domRound >= 0 && domRound !== currentRoundIndex && domRound < allRounds.length) {
+          log('🔄 DOM says round', domRound + 1, '(was', currentRoundIndex + 1, ')');
+          currentRoundIndex = domRound;
+          const r = allRounds[currentRoundIndex];
+          if (r) {
+            sendCoords(r.lat, r.lng, `dom_round_${currentRoundIndex + 1}`);
+          }
         }
       }
     }, 1000);
@@ -232,7 +283,7 @@
       // Initial parse
       parseNextData();
       
-      // Setup observers and handlers
+      // Setup handlers
       setupObserver();
       setupClickHandler();
       setupPeriodicCheck();

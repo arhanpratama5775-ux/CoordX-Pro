@@ -1,8 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.4.0)
- * 
- * - Added in-extension logging viewer
- * - FIX: Restore coords from storage on open, but always fetch new geocoding
+ * CoordX Pro — Side Panel Script (v1.5.2)
  */
 
 (function () {
@@ -28,7 +25,6 @@
     addrCountry: $('addrCountry'),
     mapFrame: $('mapFrame'),
     resetBtn: $('resetBtn'),
-    // Logs
     logsSection: $('logsSection'),
     logsToggle: $('logsToggle'),
     logsContainer: $('logsContainer'),
@@ -41,8 +37,9 @@
   let currentCoords = null;
   let geocodeTimeout = null;
   let logsVisible = false;
+  let autoScrollEnabled = false;
 
-  console.log('[CoordX Pro] Side panel v1.4.0 loaded');
+  console.log('[CoordX Pro] Side panel v1.5.2 loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
@@ -55,7 +52,6 @@
       els.trackingToggle.checked = storage.trackingEnabled;
     }
 
-    // Restore coords if available (but NOT address - we'll fetch fresh)
     if (storage.lastCoords) {
       console.log('[CoordX Pro] Restoring coords:', storage.lastCoords);
       currentCoords = storage.lastCoords;
@@ -63,17 +59,12 @@
       els.statusText.textContent = 'Location found!';
       els.statusText.classList.add('found');
       postToMap(storage.lastCoords.lat, storage.lastCoords.lng);
-      
-      // Always fetch fresh geocoding
       reverseGeocode(storage.lastCoords.lat, storage.lastCoords.lng);
     } else {
       els.statusText.textContent = 'Searching for location...';
     }
 
-    // Load logs
     loadLogs();
-    
-    // Auto-refresh logs every 2 seconds
     setInterval(loadLogs, 2000);
   }
 
@@ -93,18 +84,16 @@
         return;
       }
       
-      // Show last 50 logs (newest at bottom)
       const recentLogs = logs.slice(-50);
       els.logsContent.innerHTML = recentLogs.map(log => {
         const time = log.time.split('T')[1]?.split('.')[0] || log.time;
         const msg = escapeHtml(log.message);
-        const isError = msg.includes('error') || msg.includes('Error') || msg.includes('⚠️');
-        const isSuccess = msg.includes('✅') || msg.includes('NEW COORDS');
+        const isError = msg.includes('error') || msg.includes('Error') || msg.includes('⚠️') || msg.includes('❌');
+        const isSuccess = msg.includes('✅') || msg.includes('SENDING');
         const className = isError ? 'log-error' : isSuccess ? 'log-success' : '';
         return `<div class="log-entry ${className}"><span class="log-time">${time}</span> ${msg}</div>`;
       }).join('');
       
-      // Auto-scroll to bottom only if enabled
       if (autoScrollEnabled) {
         els.logsContent.scrollTop = els.logsContent.scrollHeight;
       }
@@ -119,29 +108,19 @@
     return div.innerHTML;
   }
 
-  let autoScrollEnabled = false;
-
-  // Toggle logs visibility
   els.logsToggle.addEventListener('click', () => {
     logsVisible = !logsVisible;
     els.logsContainer.style.display = logsVisible ? 'block' : 'none';
-    if (logsVisible) {
-      loadLogs();
-    }
+    if (logsVisible) loadLogs();
   });
 
-  // Toggle auto-scroll
   els.logsContent.addEventListener('click', () => {
     autoScrollEnabled = !autoScrollEnabled;
     els.logsContent.style.borderColor = autoScrollEnabled ? 'var(--success)' : 'var(--border-color)';
   });
 
-  // Refresh logs button
-  els.refreshLogsBtn.addEventListener('click', () => {
-    loadLogs();
-  });
+  els.refreshLogsBtn.addEventListener('click', loadLogs);
 
-  // Clear logs button
   els.clearLogsBtn.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({ type: 'clearLogs' });
     loadLogs();
@@ -150,16 +129,17 @@
   /* ─── Coordinate Update Handler ─────────────────────── */
 
   function handleNewCoords(lat, lng, source) {
-    // Check if this is actually new coords
-    const isNew = !currentCoords || 
-        Math.abs(currentCoords.lat - lat) > 0.0001 ||
-        Math.abs(currentCoords.lng - lng) > 0.0001;
+    console.log('[CoordX Pro] 📍 handleNewCoords:', lat?.toFixed?.(4), lng?.toFixed?.(4), 'from', source);
 
-    console.log(`[CoordX Pro] ✅ Coords from ${source}:`, lat, lng, isNew ? '(NEW)' : '(same)');
-    
+    if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) {
+      console.error('[CoordX Pro] Invalid coords received:', lat, lng);
+      return;
+    }
+
+    // ALWAYS update - user might be on a new round
     currentCoords = { lat, lng };
 
-    // ALWAYS update UI and map (even for same coords - might be new round)
+    // Update UI
     updateCoordinates(lat, lng);
     postToMap(lat, lng);
     
@@ -167,10 +147,8 @@
     els.statusText.classList.add('found');
     els.statusText.classList.remove('paused');
     
-    // Fetch geocoding for new coords
-    if (isNew) {
-      reverseGeocode(lat, lng);
-    }
+    // Always fetch fresh geocoding
+    reverseGeocode(lat, lng);
   }
 
   /* ─── Message Listener ──────────────────────────────── */
@@ -204,27 +182,18 @@
     console.log('[CoordX Pro] Sending to map:', lat, lng);
     
     const mapFrame = els.mapFrame;
-    if (!mapFrame) {
-      console.warn('[CoordX Pro] Map frame not found');
-      return;
-    }
+    if (!mapFrame) return;
 
-    // Try multiple times to ensure message is received
     const sendMsg = () => {
       if (mapFrame.contentWindow) {
         mapFrame.contentWindow.postMessage({
           type: 'updateCoords',
-          lat,
-          lng
+          lat, lng
         }, '*');
-        console.log('[CoordX Pro] Message sent to map');
       }
     };
 
-    // Send immediately
     sendMsg();
-    
-    // Also send after short delays (in case iframe is loading)
     setTimeout(sendMsg, 100);
     setTimeout(sendMsg, 300);
   }
@@ -234,7 +203,6 @@
   async function reverseGeocode(lat, lng) {
     console.log('[CoordX Pro] 🌍 Geocoding:', lat, lng);
     
-    // Clear old address and show loading
     els.addrDisplayName.textContent = 'Loading address...';
     els.addrNeighborhood.textContent = '—';
     els.addrSuburb.textContent = '—';
@@ -245,7 +213,6 @@
     els.addrCountry.textContent = '—';
     els.addressSection.classList.add('active');
     
-    // Debounce
     if (geocodeTimeout) clearTimeout(geocodeTimeout);
 
     geocodeTimeout = setTimeout(async () => {
@@ -262,20 +229,15 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const data = await response.json();
-        console.log('[CoordX Pro] Geocode result:', data);
         
         if (data.error) throw new Error(data.error);
 
         const address = parseAddress(data);
         updateAddressUI(address);
-
-        // Save to storage
         chrome.storage.local.set({ lastAddress: address });
 
       } catch (err) {
         console.error('[CoordX Pro] Geocoding failed:', err.message);
-        
-        // Show coords as fallback
         updateAddressUI({
           displayName: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
           neighborhood: '—',
