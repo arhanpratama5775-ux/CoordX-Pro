@@ -108,4 +108,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.8.8 ready');
+log('Background v1.8.9 ready');
