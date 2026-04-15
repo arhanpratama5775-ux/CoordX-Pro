@@ -1,24 +1,9 @@
 /**
- * CoordX Pro — Background Service Worker (v1.5.5)
+ * CoordX Pro — Background Service Worker (v1.6.0)
  */
 
-/* ─── State ─────────────────────────────────────────────── */
-
 let lastCoords = null;
-let trackingEnabled = true;
-let allRounds = [];
-let currentRoundIndex = 0;
 let lastLogTime = 0;
-
-const SUPPORTED_SITES = [
-  'geoguessr.com',
-  'openguessr.com',
-  'worldguessr.com',
-  'crazygames.com'
-];
-
-/* ─── Logging (rate-limited) ────────────────────────────── */
-
 const LOG_KEY = 'coordx_logs';
 const MAX_LOGS = 50;
 
@@ -27,65 +12,33 @@ async function addLog(message, time = new Date().toISOString()) {
     const result = await chrome.storage.local.get([LOG_KEY]);
     let logs = result[LOG_KEY] || [];
     logs.push({ time, message });
-    if (logs.length > MAX_LOGS) {
-      logs = logs.slice(-MAX_LOGS);
-    }
+    if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
     await chrome.storage.local.set({ [LOG_KEY]: logs });
   } catch (e) {}
 }
 
-function log(...args) {
-  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+function log(msg) {
   console.log('[CoordX Pro]', msg);
-  
-  // Rate limit
   const now = Date.now();
-  if (now - lastLogTime > 500) {
+  if (now - lastLogTime > 300) {
     lastLogTime = now;
     addLog(msg);
   }
 }
 
-/* ─── Side Panel Management ─────────────────────────────── */
-
-function initSidePanel() {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-}
+/* ─── Init ───────────────────────────────────────────── */
 
 chrome.runtime.onInstalled.addListener(() => {
-  initSidePanel();
-  chrome.storage.local.set({
-    trackingEnabled: true,
-    lastCoords: null
-  });
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  chrome.storage.local.set({ trackingEnabled: true });
+  log('Extension installed v1.6.0');
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  initSidePanel();
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 });
 
-initSidePanel();
-
-chrome.storage.local.get(['trackingEnabled']).then(result => {
-  if (result.trackingEnabled !== undefined) {
-    trackingEnabled = result.trackingEnabled;
-  }
-}).catch(() => {});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) {
-    const isSupported = SUPPORTED_SITES.some(site => tab.url.includes(site));
-    if (isSupported) {
-      chrome.sidePanel.setOptions({
-        tabId,
-        path: 'sidepanel.html',
-        enabled: true
-      }).catch(() => {});
-    }
-  }
-});
-
-/* ─── Helper Functions ─────────────────────────────────── */
+/* ─── Coords Handler ─────────────────────────────────── */
 
 function isValidCoord(lat, lng) {
   return !isNaN(lat) && !isNaN(lng) &&
@@ -96,22 +49,34 @@ function isValidCoord(lat, lng) {
     Math.abs(lng) > 0.001;
 }
 
-function processAndSendCoords(lat, lng, source) {
-  if (!isValidCoord(lat, lng)) return;
+function processCoords(lat, lng, source) {
+  if (!isValidCoord(lat, lng)) {
+    log('Invalid: ' + lat + ', ' + lng);
+    return;
+  }
 
-  log(`✅ ${source}: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+  // Check if different from last
+  const isDiff = !lastCoords || 
+    Math.abs(lastCoords.lat - lat) > 0.0001 ||
+    Math.abs(lastCoords.lng - lng) > 0.0001;
+
+  if (!isDiff) {
+    log('Same coords, skip');
+    return;
+  }
+
+  log('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
   
   lastCoords = { lat, lng };
   
-  // ONLY use storage - sidepanel listens to storage changes
+  // Save to storage - sidepanel will detect change
   chrome.storage.local.set({ lastCoords: { lat, lng } });
 }
 
-/* ─── Message Handling ────────────────────────────────── */
+/* ─── Message Handler ────────────────────────────────── */
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
-
     case 'log':
       addLog(message.message, message.time);
       sendResponse({ success: true });
@@ -131,67 +96,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'resetSearch':
       lastCoords = null;
-      allRounds = [];
-      currentRoundIndex = 0;
       chrome.storage.local.remove(['lastCoords']);
       sendResponse({ success: true });
       break;
 
-    case 'toggleTracking':
-      trackingEnabled = message.enabled;
-      chrome.storage.local.set({ trackingEnabled });
-      sendResponse({ success: true, trackingEnabled });
-      break;
-
     case 'contentCoords':
-      if (!isValidCoord(message.lat, message.lng)) {
-        sendResponse({ success: false });
-        return;
-      }
-
-      // Parse round number from source
-      if (message.source) {
-        const roundMatch = message.source.match(/r(\d+)/);
-        if (roundMatch) {
-          currentRoundIndex = parseInt(roundMatch[1]) - 1;
-        }
-      }
-
-      processAndSendCoords(message.lat, message.lng, message.source);
+      processCoords(message.lat, message.lng, message.source);
       sendResponse({ success: true });
       break;
 
-    case 'geoGuessrRounds':
-      if (message.rounds && Array.isArray(message.rounds)) {
-        allRounds = message.rounds;
-        currentRoundIndex = message.currentRound || 0;
-        
-        if (currentRoundIndex >= allRounds.length) {
-          currentRoundIndex = Math.max(0, allRounds.length - 1);
-        }
-        
-        if (allRounds[currentRoundIndex]) {
-          const r = allRounds[currentRoundIndex];
-          processAndSendCoords(r.lat, r.lng, 'round_' + (currentRoundIndex + 1));
-        }
-      }
+    case 'toggleTracking':
+      chrome.storage.local.set({ trackingEnabled: message.enabled });
       sendResponse({ success: true });
-      break;
-
-    case 'advanceRound':
-      if (currentRoundIndex < allRounds.length - 1) {
-        currentRoundIndex++;
-        if (allRounds[currentRoundIndex]) {
-          const r = allRounds[currentRoundIndex];
-          processAndSendCoords(r.lat, r.lng, 'round_' + (currentRoundIndex + 1));
-        }
-      }
-      sendResponse({ success: true, currentRound: currentRoundIndex + 1 });
-      break;
-
-    default:
       break;
   }
 });
 
-log('Background v1.5.5 ready');
+log('Background v1.6.0 ready');

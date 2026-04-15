@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.5.5)
+ * CoordX Pro — Side Panel Script (v1.6.0)
  */
 
 (function () {
@@ -39,24 +39,18 @@
   let logsVisible = false;
   let lastLogTime = 0;
 
-  /* ─── Rate-limited Log ───────────────────────────────── */
-
   function log(msg) {
     console.log('[CoordX Pro]', msg);
     const now = Date.now();
-    if (now - lastLogTime > 500) {
+    if (now - lastLogTime > 300) {
       lastLogTime = now;
-      chrome.runtime.sendMessage({ 
-        type: 'log', 
-        message: '[SIDE] ' + msg, 
-        time: new Date().toISOString() 
-      }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'log', message: '[SIDE] ' + msg }).catch(() => {});
     }
   }
 
-  log('Side panel loaded');
+  log('Side panel v1.6.0 loaded');
 
-  /* ─── Initialize ────────────────────────────────────── */
+  /* ─── Init ───────────────────────────────────────────── */
 
   async function init() {
     const storage = await chrome.storage.local.get(['trackingEnabled', 'lastCoords']);
@@ -66,7 +60,7 @@
     }
 
     if (storage.lastCoords) {
-      updateUI(storage.lastCoords.lat, storage.lastCoords.lng);
+      updateUI(storage.lastCoords.lat, storage.lastCoords.lng, 'init');
     } else {
       els.statusText.textContent = 'Searching...';
     }
@@ -116,10 +110,10 @@
     loadLogs();
   });
 
-  /* ─── UI Update ─────────────────────────────────────── */
+  /* ─── UI Update ──────────────────────────────────────── */
 
-  function updateUI(lat, lng) {
-    log('Update: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+  function updateUI(lat, lng, source) {
+    log('UI update: ' + lat.toFixed(4) + ', ' + lng.toFixed(4) + ' (' + source + ')');
     
     currentCoords = { lat, lng };
     
@@ -132,7 +126,7 @@
     els.statusText.textContent = 'Found!';
     els.statusText.classList.add('found');
     
-    // Send to map - multiple attempts
+    // Send to map iframe
     const sendToMap = () => {
       if (els.mapFrame?.contentWindow) {
         els.mapFrame.contentWindow.postMessage({
@@ -145,24 +139,23 @@
     sendToMap();
     setTimeout(sendToMap, 100);
     setTimeout(sendToMap, 300);
-    setTimeout(sendToMap, 500);
     
     // Fetch geocoding
     reverseGeocode(lat, lng);
   }
 
-  /* ─── Listen for Storage Changes ────────────────────── */
+  /* ─── Listen for Storage Changes ─────────────────────── */
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     
     if (changes.lastCoords?.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
-      updateUI(lat, lng);
+      updateUI(lat, lng, 'storage');
     }
   });
 
-  /* ─── Geocoding ─────────────────────────────────────── */
+  /* ─── Geocoding ──────────────────────────────────────── */
 
   async function reverseGeocode(lat, lng) {
     els.addrDisplayName.textContent = 'Loading...';
@@ -200,7 +193,7 @@
     }, 300);
   }
 
-  /* ─── Controls ──────────────────────────────────────── */
+  /* ─── Controls ───────────────────────────────────────── */
 
   els.trackingToggle.addEventListener('change', async () => {
     const enabled = els.trackingToggle.checked;

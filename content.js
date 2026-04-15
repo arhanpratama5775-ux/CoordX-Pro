@@ -1,234 +1,134 @@
 /**
- * CoordX Pro — Content Script (v1.5.5)
+ * CoordX Pro — Content Script (v1.6.0)
  * 
- * Simplified approach - less logging, more reliable
+ * Inject script into page context to access React/Next.js state
  */
 
 (function () {
   'use strict';
 
-  // Prevent double injection
-  if (window.__coordxProV155Injected) return;
-  window.__coordxProV155Injected = true;
+  if (window.__coordxProV160Injected) return;
+  window.__coordxProV160Injected = true;
 
-  /* ─── State ──────────────────────────────────────────── */
+  console.log('[CoordX Pro] Content script v1.6.0 loaded');
 
-  let allRounds = [];
-  let currentRoundIndex = 0;
-  let lastSentKey = '';
-  let lastDataStr = '';
-  let lastLogTime = 0;
+  // Inject script into page context
+  const script = document.createElement('script');
+  script.textContent = `
+    (function() {
+      let lastCoords = null;
+      let lastRound = -1;
+      
+      function getCoords() {
+        // Try __NEXT_DATA__
+        const nextData = document.getElementById('__NEXT_DATA__');
+        if (nextData) {
+          try {
+            const data = JSON.parse(nextData.textContent);
+            const snapshot = data.props?.pageProps?.gameSnapshot;
+            if (snapshot?.rounds) {
+              const roundIndex = snapshot.round ?? 0;
+              const rounds = snapshot.rounds;
+              
+              if (roundIndex >= 0 && roundIndex < rounds.length) {
+                const r = rounds[roundIndex];
+                if (r.lat && r.lng) {
+                  return { lat: r.lat, lng: r.lng, round: roundIndex, total: rounds.length };
+                }
+              }
+            }
+          } catch(e) {}
+        }
+        
+        // Try window.__RENDER_DATA__ or similar
+        if (window.__INITIAL_STATE__) {
+          const state = window.__INITIAL_STATE__;
+          // Add more patterns as needed
+        }
+        
+        return null;
+      }
+      
+      function checkAndSend() {
+        const coords = getCoords();
+        if (!coords) return;
+        
+        // Only send if round changed or coords different
+        if (coords.round !== lastRound || !lastCoords || 
+            Math.abs(lastCoords.lat - coords.lat) > 0.0001 ||
+            Math.abs(lastCoords.lng - coords.lng) > 0.0001) {
+          
+          lastCoords = { lat: coords.lat, lng: coords.lng };
+          lastRound = coords.round;
+          
+          // Send to extension
+          window.postMessage({
+            type: 'COORDX_COORDS',
+            lat: coords.lat,
+            lng: coords.lng,
+            round: coords.round + 1,
+            total: coords.total
+          }, '*');
+          
+          console.log('[CoordX Pro] Page found:', coords.lat.toFixed(4), coords.lng.toFixed(4), 'Round', coords.round + 1);
+        }
+      }
+      
+      // Check on load
+      setTimeout(checkAndSend, 100);
+      setTimeout(checkAndSend, 500);
+      setTimeout(checkAndSend, 1500);
+      setTimeout(checkAndSend, 3000);
+      
+      // Check periodically
+      setInterval(checkAndSend, 2000);
+      
+      // Check on URL change
+      let lastUrl = location.href;
+      setInterval(() => {
+        if (location.href !== lastUrl) {
+          lastUrl = location.href;
+          lastRound = -1; // Reset round tracking
+          lastCoords = null;
+          setTimeout(checkAndSend, 500);
+          setTimeout(checkAndSend, 1500);
+        }
+      }, 500);
+      
+      // Check on click (NEXT button)
+      document.addEventListener('click', (e) => {
+        const text = (e.target.innerText || '').toUpperCase();
+        if (text.includes('NEXT')) {
+          lastRound = -1; // Force re-check
+          setTimeout(checkAndSend, 300);
+          setTimeout(checkAndSend, 1000);
+        }
+      }, true);
+      
+      console.log('[CoordX Pro] Page script injected');
+    })();
+  `;
+  
+  (document.head || document.documentElement).appendChild(script);
+  script.remove();
 
-  /* ─── Rate-limited Logging ───────────────────────────── */
-
-  function log(...args) {
-    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
-    console.log('[CoordX Pro]', msg);
+  // Listen for messages from page script
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    if (event.data?.type !== 'COORDX_COORDS') return;
     
-    // Rate limit - max 1 log per 500ms
-    const now = Date.now();
-    if (now - lastLogTime > 500) {
-      lastLogTime = now;
-      try {
-        chrome.runtime.sendMessage({ type: 'log', message: msg, time: new Date().toISOString() }).catch(() => {});
-      } catch (e) {}
-    }
-  }
-
-  /* ─── Validation ─────────────────────────────────────── */
-
-  function isValidCoord(lat, lng) {
-    return !isNaN(lat) && !isNaN(lng) &&
-      lat >= -90 && lat <= 90 &&
-      lng >= -180 && lng <= 180 &&
-      !(lat === 0 && lng === 0) &&
-      Math.abs(lat) > 0.001 &&
-      Math.abs(lng) > 0.001;
-  }
-
-  /* ─── Send Coords ────────────────────────────────────── */
-
-  function sendCoords(lat, lng, source) {
-    if (!isValidCoord(lat, lng)) return;
+    const { lat, lng, round, total } = event.data;
     
-    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    console.log('[CoordX Pro] Received from page:', lat.toFixed(4), lng.toFixed(4), 'Round', round);
     
-    // Skip if same as last sent
-    if (key === lastSentKey) return;
-    lastSentKey = key;
-    
-    log('📍 Round', source, ':', lat.toFixed(4), lng.toFixed(4));
-    
+    // Send to background
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
-        lat, lng, source
+        lat, lng,
+        source: `page_round_${round}`
       });
     } catch (e) {}
-  }
-
-  /* ─── Parse __NEXT_DATA__ ────────────────────────────── */
-
-  function parseNextData() {
-    const script = document.getElementById('__NEXT_DATA__');
-    if (!script) return false;
-
-    const dataStr = script.textContent;
-    if (dataStr === lastDataStr) return false;
-    
-    lastDataStr = dataStr;
-
-    try {
-      const data = JSON.parse(dataStr);
-      const snapshot = data.props?.pageProps?.gameSnapshot;
-      
-      if (!snapshot || !snapshot.rounds) return false;
-
-      // Store rounds
-      allRounds = [];
-      snapshot.rounds.forEach((r, i) => {
-        if (isValidCoord(r.lat, r.lng)) {
-          allRounds.push({ lat: r.lat, lng: r.lng, index: i });
-        }
-      });
-      
-      if (allRounds.length === 0) return false;
-
-      // Get current round
-      let roundIndex = snapshot.round ?? 0;
-      if (roundIndex >= allRounds.length) roundIndex = allRounds.length - 1;
-      if (roundIndex < 0) roundIndex = 0;
-      
-      currentRoundIndex = roundIndex;
-
-      log('🎮 Game loaded:', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
-
-      // Send current round coords
-      const r = allRounds[currentRoundIndex];
-      if (r) {
-        sendCoords(r.lat, r.lng, `round_${currentRoundIndex + 1}`);
-      }
-
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /* ─── Check and Update Round ─────────────────────────── */
-
-  function checkAndUpdateRound() {
-    // Try to detect current round from DOM
-    const roundEl = document.querySelector('[data-qa="round-number"]');
-    if (roundEl) {
-      const match = roundEl.textContent.match(/(\d+)\s*[\/\|]/);
-      if (match) {
-        const domRound = parseInt(match[1]) - 1;
-        if (domRound >= 0 && domRound !== currentRoundIndex && domRound < allRounds.length) {
-          currentRoundIndex = domRound;
-          const r = allRounds[currentRoundIndex];
-          if (r) {
-            sendCoords(r.lat, r.lng, `dom_round_${currentRoundIndex + 1}`);
-          }
-        }
-      }
-    }
-  }
-
-  /* ─── Click Handler ──────────────────────────────────── */
-
-  function setupClickHandler() {
-    document.addEventListener('click', (e) => {
-      const target = e.target;
-      const text = (target.innerText || target.textContent || '').toUpperCase().trim();
-      const className = (target.className || '').toString().toLowerCase();
-      
-      // Check for NEXT button
-      if (text === 'NEXT' || text.includes('NEXT') || className.includes('next')) {
-        log('🖱️ NEXT clicked');
-        
-        // Advance round if possible
-        if (currentRoundIndex < allRounds.length - 1) {
-          currentRoundIndex++;
-          const r = allRounds[currentRoundIndex];
-          if (r) {
-            lastSentKey = ''; // Force send
-            sendCoords(r.lat, r.lng, `next_round_${currentRoundIndex + 1}`);
-          }
-        } else {
-          // Force reparse for new game
-          lastDataStr = '';
-          setTimeout(parseNextData, 500);
-          setTimeout(parseNextData, 1500);
-        }
-      }
-    }, true);
-  }
-
-  /* ─── Periodic Check (throttled) ─────────────────────── */
-
-  function setupPeriodicCheck() {
-    // Check for new data every 2 seconds
-    setInterval(() => {
-      const script = document.getElementById('__NEXT_DATA__');
-      if (script && script.textContent !== lastDataStr) {
-        parseNextData();
-      }
-    }, 2000);
-
-    // Check for round changes every 3 seconds
-    setInterval(() => {
-      if (allRounds.length > 0) {
-        checkAndUpdateRound();
-      }
-    }, 3000);
-  }
-
-  /* ─── WorldGuessr Support ────────────────────────────── */
-
-  function checkWorldGuessr() {
-    const iframes = document.querySelectorAll('iframe');
-    for (const iframe of iframes) {
-      if (iframe.src && iframe.src.includes('location=')) {
-        const match = iframe.src.match(/location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-        if (match) {
-          const lat = parseFloat(match[1]);
-          const lng = parseFloat(match[2]);
-          if (isValidCoord(lat, lng)) {
-            sendCoords(lat, lng, 'worldguessr');
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  /* ─── Init ───────────────────────────────────────────── */
-
-  function init() {
-    const hostname = window.location.hostname;
-
-    if (hostname.includes('geoguessr.com')) {
-      parseNextData();
-      setupClickHandler();
-      setupPeriodicCheck();
-      
-      // Retry parsing
-      setTimeout(parseNextData, 500);
-      setTimeout(parseNextData, 1500);
-      setTimeout(parseNextData, 3000);
-    }
-
-    if (hostname.includes('worldguessr.com')) {
-      setInterval(checkWorldGuessr, 500);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  });
 
 })();
