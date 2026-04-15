@@ -1,19 +1,20 @@
 /**
- * CoordX Pro — Content Script (v1.6.1)
+ * CoordX Pro — Content Script (v1.6.2)
  * 
- * Simple and reliable approach
+ * NO script injection - direct DOM access only
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV161Injected) return;
-  window.__coordxProV161Injected = true;
+  if (window.__coordxProV162Injected) return;
+  window.__coordxProV162Injected = true;
 
-  console.log('[CoordX Pro] Content script v1.6.1 loaded');
+  console.log('[CoordX Pro] Content script v1.6.2 loaded');
 
   let lastLat = null;
   let lastLng = null;
+  let checkCount = 0;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -42,7 +43,8 @@
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
-        lat, lng,
+        lat: lat,
+        lng: lng,
         source: source
       });
     } catch (e) {
@@ -50,42 +52,34 @@
     }
   }
 
-  function parseGame() {
-    // Method 1: __NEXT_DATA__
+  function parseNextData() {
     const script = document.getElementById('__NEXT_DATA__');
-    if (script) {
-      try {
-        const data = JSON.parse(script.textContent);
-        const snapshot = data.props?.pageProps?.gameSnapshot;
-        
-        if (snapshot?.rounds) {
-          const roundIndex = snapshot.round ?? 0;
-          const rounds = snapshot.rounds;
-          
-          if (roundIndex >= 0 && roundIndex < rounds.length) {
-            const r = rounds[roundIndex];
-            if (r.lat && r.lng) {
-              sendCoords(r.lat, r.lng, 'next_data_r' + (roundIndex + 1));
-              return true;
-            }
-          }
+    if (!script || !script.textContent) return false;
+    
+    try {
+      const data = JSON.parse(script.textContent);
+      const snapshot = data.props?.pageProps?.gameSnapshot;
+      
+      if (!snapshot?.rounds) return false;
+      
+      const roundIndex = snapshot.round ?? 0;
+      const rounds = snapshot.rounds;
+      
+      if (roundIndex >= 0 && roundIndex < rounds.length) {
+        const r = rounds[roundIndex];
+        if (r && isValidCoord(r.lat, r.lng)) {
+          sendCoords(r.lat, r.lng, 'next_data_r' + (roundIndex + 1));
+          return true;
         }
-      } catch (e) {}
-    }
-    
-    // Method 2: Check URL for location params
-    const url = window.location.href;
-    const locMatch = url.match(/[?&]location=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
-    if (locMatch) {
-      const lat = parseFloat(locMatch[1]);
-      const lng = parseFloat(locMatch[2]);
-      if (isValidCoord(lat, lng)) {
-        sendCoords(lat, lng, 'url');
-        return true;
       }
+    } catch (e) {
+      console.error('[CoordX Pro] Parse error:', e);
     }
     
-    // Method 3: Check for iframes with location
+    return false;
+  }
+
+  function checkWorldGuessr() {
     const iframes = document.querySelectorAll('iframe');
     for (const iframe of iframes) {
       if (iframe.src && iframe.src.includes('location=')) {
@@ -94,56 +88,63 @@
           const lat = parseFloat(match[1]);
           const lng = parseFloat(match[2]);
           if (isValidCoord(lat, lng)) {
-            sendCoords(lat, lng, 'iframe');
+            sendCoords(lat, lng, 'worldguessr');
             return true;
           }
         }
       }
     }
-    
     return false;
   }
 
-  // Initial parse
-  function init() {
-    parseGame();
+  function check() {
+    checkCount++;
+    
+    const hostname = window.location.hostname;
+    
+    if (hostname.includes('geoguessr.com')) {
+      parseNextData();
+    } else if (hostname.includes('worldguessr.com')) {
+      checkWorldGuessr();
+    }
   }
 
+  // Initial checks
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', check);
   } else {
-    init();
+    check();
   }
-
-  // Retry on load
-  setTimeout(init, 500);
-  setTimeout(init, 1500);
-  setTimeout(init, 3000);
+  
+  setTimeout(check, 500);
+  setTimeout(check, 1500);
+  setTimeout(check, 3000);
 
   // Poll every 2 seconds
-  setInterval(parseGame, 2000);
+  setInterval(check, 2000);
 
-  // On URL change
+  // URL change detection
   let lastUrl = location.href;
   setInterval(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      lastLat = null;  // Reset to allow new coords
+      lastLat = null;
       lastLng = null;
-      setTimeout(parseGame, 300);
-      setTimeout(parseGame, 1000);
+      setTimeout(check, 300);
+      setTimeout(check, 1000);
     }
   }, 500);
 
-  // On click
+  // NEXT button click
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT')) {
-      lastLat = null;  // Reset to force send new coords
+      console.log('[CoordX Pro] NEXT clicked');
+      lastLat = null;
       lastLng = null;
-      setTimeout(parseGame, 300);
-      setTimeout(parseGame, 1000);
-      setTimeout(parseGame, 2000);
+      setTimeout(check, 300);
+      setTimeout(check, 1000);
+      setTimeout(check, 2000);
     }
   }, true);
 

@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.6.1)
+ * CoordX Pro — Side Panel Script (v1.6.2)
  */
 
 (function () {
@@ -38,7 +38,7 @@
   let geocodeTimeout = null;
   let logsVisible = false;
 
-  console.log('[CoordX Pro] Side panel v1.6.1 loaded');
+  console.log('[CoordX Pro] Side panel v1.6.2 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
