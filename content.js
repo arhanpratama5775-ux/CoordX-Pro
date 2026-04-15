@@ -1,22 +1,46 @@
 /**
- * CoordX Pro — Content Script (v1.3.0)
+ * CoordX Pro — Content Script (v1.4.0)
  * 
- * Simplified - focus on GeoGuessr __NEXT_DATA__ and round detection
+ * - Added in-extension logging for debugging on mobile/side panel
+ * - Simplified - focus on GeoGuessr __NEXT_DATA__ and round detection
  */
 
 (function () {
   'use strict';
 
   // Prevent double injection
-  if (window.__coordxProV130Injected) {
-    console.log('[CoordX Pro] Already injected v1.3.0');
+  if (window.__coordxProV140Injected) {
+    log('Already injected v1.4.0');
     return;
   }
-  window.__coordxProV130Injected = true;
+  window.__coordxProV140Injected = true;
 
-  console.log('[CoordX Pro] 🚀 Content script v1.3.0 loaded');
-  console.log('[CoordX Pro] URL:', window.location.href);
-  console.log('[CoordX Pro] ReadyState:', document.readyState);
+  /* ─── In-Extension Logging ───────────────────────────── */
+
+  const LOG_KEY = 'coordx_logs';
+  const MAX_LOGS = 100;
+
+  function log(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+    console.log('[CoordX Pro]', msg);
+    
+    // Also save to extension storage
+    saveLog(msg);
+  }
+
+  function saveLog(msg) {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'log',
+        message: msg,
+        time: new Date().toISOString()
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
+  log('🚀 Content script v1.4.0 loaded');
+  log('URL:', window.location.href);
+  log('ReadyState:', document.readyState);
 
   /* ─── Coordinate Validation ───────────────────────────── */
 
@@ -34,7 +58,7 @@
   /* ─── Send Coordinates to Background ─────────────────── */
 
   function sendCoords(lat, lng, source) {
-    console.log('[CoordX Pro] 📍 Sending coords:', lat, lng, 'via', source);
+    log('📍 Sending coords:', lat, lng, 'via', source);
     
     try {
       chrome.runtime.sendMessage({
@@ -44,13 +68,13 @@
         source
       }, (response) => {
         if (chrome.runtime.lastError) {
-          console.log('[CoordX Pro] Send result:', chrome.runtime.lastError.message);
+          log('Send result:', chrome.runtime.lastError.message);
         } else {
-          console.log('[CoordX Pro] Send response:', response);
+          log('Send response:', response);
         }
       });
     } catch (e) {
-      console.error('[CoordX Pro] Send error:', e);
+      log('Send error:', e.message);
     }
   }
 
@@ -61,50 +85,66 @@
   let lastSentRound = -1;
 
   function parseNextData() {
+    log('Parsing __NEXT_DATA__...');
+    
     const script = document.getElementById('__NEXT_DATA__');
     if (!script) {
-      console.log('[CoordX Pro] No __NEXT_DATA__ found');
+      log('No __NEXT_DATA__ found');
       return false;
     }
 
     try {
       const data = JSON.parse(script.textContent);
+      log('Parsed __NEXT_DATA__, keys:', Object.keys(data));
+      
       const props = data.props?.pageProps;
-
       if (!props?.gameSnapshot) {
-        console.log('[CoordX Pro] No gameSnapshot');
+        log('No gameSnapshot in props');
         return false;
       }
 
       const snapshot = props.gameSnapshot;
+      log('gameSnapshot keys:', Object.keys(snapshot));
+      log('Current round (from gameSnapshot.round):', snapshot.round);
+      
       const rounds = snapshot.rounds;
 
       if (!rounds || !Array.isArray(rounds)) {
-        console.log('[CoordX Pro] No rounds array');
+        log('No rounds array');
         return false;
       }
 
       // Store all rounds
-      allRounds = rounds.map(r => ({
+      allRounds = rounds.map((r, i) => ({
         lat: r.lat,
         lng: r.lng,
-        panoId: r.panoId
+        panoId: r.panoId,
+        roundIndex: i
       })).filter(r => isValidCoord(r.lat, r.lng));
 
-      console.log('[CoordX Pro] ✅ Loaded', allRounds.length, 'rounds');
+      log('✅ Loaded', allRounds.length, 'rounds');
+      allRounds.forEach((r, i) => {
+        log(`  Round ${i+1}: lat=${r.lat.toFixed(4)}, lng=${r.lng.toFixed(4)}`);
+      });
+
+      // Get current round from gameSnapshot.round (0-indexed)
+      if (snapshot.round !== undefined) {
+        currentRoundIndex = snapshot.round;
+        log('Current round index from gameSnapshot:', currentRoundIndex);
+      }
 
       // Send all rounds to background
       try {
         chrome.runtime.sendMessage({
           type: 'geoGuessrRounds',
           rounds: allRounds,
-          currentRound: 0
+          currentRound: currentRoundIndex
         }).catch(() => {});
       } catch (e) {}
 
       return true;
     } catch (e) {
-      console.error('[CoordX Pro] Parse error:', e);
+      log('Parse error:', e.message);
       return false;
     }
   }
@@ -116,17 +156,34 @@
     const roundEl = document.querySelector('[data-qa="round-number"]');
     if (roundEl) {
       const text = roundEl.textContent || '';
+      log('Found round element:', text);
       const match = text.match(/(\d+)\s*[\/\|]/);
       if (match) {
-        return parseInt(match[1]) - 1; // 0-indexed
+        const round = parseInt(match[1]) - 1; // 0-indexed
+        log('Parsed round from DOM:', round);
+        return round;
       }
     }
 
-    // Fallback: look for "Round X / Y" pattern
-    const bodyText = document.body?.innerText || '';
-    const match = bodyText.match(/Round\s*(\d+)\s*[\/\|]/i);
+    // Fallback: look for "ROUND X / Y" pattern in all text
+    const allText = document.body?.innerText || '';
+    const match = allText.match(/ROUND\s*(\d+)\s*[\/\|]/i);
     if (match) {
-      return parseInt(match[1]) - 1;
+      const round = parseInt(match[1]) - 1;
+      log('Found ROUND in body text:', round);
+      return round;
+    }
+
+    // Look for specific class names that GeoGuessr might use
+    const roundIndicators = document.querySelectorAll('[class*="round"], [class*="Round"]');
+    for (const el of roundIndicators) {
+      const text = el.textContent || '';
+      const match = text.match(/(\d+)\s*[\/\|]/);
+      if (match) {
+        const round = parseInt(match[1]) - 1;
+        log('Found round indicator:', text, '->', round);
+        return round;
+      }
     }
 
     return currentRoundIndex;
@@ -137,17 +194,23 @@
   function sendCurrentRoundCoords(source) {
     const domRound = getCurrentRoundFromDOM();
     
+    log(`sendCurrentRoundCoords(${source}): domRound=${domRound}, currentIndex=${currentRoundIndex}, lastSent=${lastSentRound}`);
+    
     if (domRound !== currentRoundIndex && domRound >= 0 && domRound < allRounds.length) {
-      console.log('[CoordX Pro] Round changed:', currentRoundIndex + 1, '->', domRound + 1);
+      log('🔄 Round changed:', currentRoundIndex + 1, '->', domRound + 1);
       currentRoundIndex = domRound;
       lastSentRound = -1; // Reset
     }
 
     if (currentRoundIndex !== lastSentRound && allRounds[currentRoundIndex]) {
       const r = allRounds[currentRoundIndex];
-      console.log('[CoordX Pro] Sending round', currentRoundIndex + 1, ':', r.lat, r.lng);
+      log('📍 Sending round', currentRoundIndex + 1, ':', r.lat, r.lng);
       sendCoords(r.lat, r.lng, 'geoguessr_r' + (currentRoundIndex + 1) + '_' + source);
       lastSentRound = currentRoundIndex;
+    } else if (!allRounds[currentRoundIndex]) {
+      log('⚠️ No round data for index', currentRoundIndex);
+    } else {
+      log('Already sent round', currentRoundIndex + 1);
     }
   }
 
@@ -174,16 +237,20 @@
   /* ─── Inject Page Script for Network Hooks ──────────── */
 
   function injectPageScript() {
-    console.log('[CoordX Pro] Injecting page script...');
+    log('Injecting page script...');
     
     const script = document.createElement('script');
     script.id = 'coordx-page-script';
     script.textContent = `
 (function() {
-  if (window.__coordxPageV130) return;
-  window.__coordxPageV130 = true;
+  if (window.__coordxPageV140) return;
+  window.__coordxPageV140 = true;
   
-  console.log('[CoordX Pro] Page script v1.3.0 active');
+  function sendToContent(msg) {
+    window.dispatchEvent(new CustomEvent('__coordx_log', { detail: msg }));
+  }
+  
+  sendToContent('[CoordX Pro] Page script v1.4.0 active');
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -193,18 +260,22 @@
   }
 
   function sendCoords(lat, lng, source, round) {
-    console.log('[CoordX Pro] 📍 Page found:', lat, lng, 'round:', round, 'via', source);
+    sendToContent('[CoordX Pro] 📍 Page found: ' + lat + ', ' + lng + ' round: ' + round + ' via ' + source);
     window.dispatchEvent(new CustomEvent('__coordx_page_coords', {
       detail: { lat, lng, source, round }
     }));
   }
 
-  function processGeoGuessrData(data) {
+  function processGeoGuessrData(data, url) {
+    sendToContent('[CoordX Pro] Processing data from: ' + url);
+    
     if (data.gameSnapshot) {
       const snapshot = data.gameSnapshot;
-      const currentRound = snapshot.round || 1;
+      const currentRound = snapshot.round || 0;
+      sendToContent('[CoordX Pro] gameSnapshot.round = ' + currentRound);
       
       if (snapshot.rounds) {
+        sendToContent('[CoordX Pro] Found ' + snapshot.rounds.length + ' rounds in snapshot');
         snapshot.rounds.forEach((r, i) => {
           if (isValidCoord(r.lat, r.lng)) {
             sendCoords(r.lat, r.lng, 'api_rounds', i + 1);
@@ -214,6 +285,7 @@
     }
     
     if (data.rounds && Array.isArray(data.rounds)) {
+      sendToContent('[CoordX Pro] Found ' + data.rounds.length + ' rounds directly');
       data.rounds.forEach((r, i) => {
         if (isValidCoord(r.lat, r.lng)) {
           sendCoords(r.lat, r.lng, 'api', i + 1);
@@ -237,13 +309,15 @@
         url.includes('game-snapshot') ||
         url.includes('games')
     )) {
-      console.log('[CoordX Pro] 🔍 Fetch:', url);
+      sendToContent('[CoordX Pro] 🔍 Fetch intercepted: ' + url);
       try {
         const cloned = response.clone();
         const text = await cloned.text();
         const data = JSON.parse(text);
-        processGeoGuessrData(data);
-      } catch (e) {}
+        processGeoGuessrData(data, url);
+      } catch (e) {
+        sendToContent('[CoordX Pro] Fetch parse error: ' + e.message);
+      }
     }
     
     return response;
@@ -260,26 +334,26 @@
     const xhr = this;
     xhr.addEventListener('load', function() {
       if (xhr._coordx_url && xhr._coordx_url.includes('geoguessr.com')) {
-        console.log('[CoordX Pro] 🔍 XHR:', xhr._coordx_url);
+        sendToContent('[CoordX Pro] 🔍 XHR: ' + xhr._coordx_url);
         try {
           const data = JSON.parse(xhr.responseText);
-          processGeoGuessrData(data);
+          processGeoGuessrData(data, xhr._coordx_url);
         } catch (e) {}
       }
     });
     return _send.apply(this, arguments);
   };
 
-  console.log('[CoordX Pro] ✅ Network hooks installed');
+  sendToContent('[CoordX Pro] ✅ Network hooks installed');
 })();
 `;
 
     try {
       (document.head || document.documentElement).appendChild(script);
       script.remove();
-      console.log('[CoordX Pro] Page script injected');
+      log('Page script injected');
     } catch (e) {
-      console.error('[CoordX Pro] Failed to inject page script:', e);
+      log('Failed to inject page script:', e.message);
     }
   }
 
@@ -296,6 +370,11 @@
     sendCoords(lat, lng, source);
   });
 
+  // Listen for page script logs
+  window.addEventListener('__coordx_log', (event) => {
+    log('(page)', event.detail);
+  });
+
   /* ─── Click Listener for NEXT Button ─────────────────── */
 
   function setupClickListener() {
@@ -303,43 +382,50 @@
       const target = e.target;
       const text = (target.innerText || target.textContent || '').toUpperCase().trim();
       const ariaLabel = (target.getAttribute('aria-label') || '').toUpperCase();
+      const className = target.className || '';
       
       // Check for NEXT button
-      if (text === 'NEXT' || ariaLabel === 'NEXT') {
-        console.log('[CoordX Pro] 🖱️ NEXT button clicked!');
+      if (text === 'NEXT' || ariaLabel === 'NEXT' || 
+          text.includes('NEXT') || className.includes('next')) {
+        log('🖱️ NEXT button clicked! text="' + text + '"');
         
         // Advance round
         if (currentRoundIndex < allRounds.length - 1) {
           currentRoundIndex++;
           lastSentRound = -1;
+          log('Advanced to round', currentRoundIndex + 1);
         }
         
-        // Send new coords after delay
+        // Send new coords after delays
         setTimeout(() => sendCurrentRoundCoords('click'), 200);
         setTimeout(() => sendCurrentRoundCoords('click2'), 500);
         setTimeout(() => sendCurrentRoundCoords('click3'), 1000);
+        setTimeout(() => sendCurrentRoundCoords('click4'), 2000);
       }
     }, true);
+    
+    log('Click listener installed');
   }
 
   /* ─── Main Init ─────────────────────────────────────── */
 
   function init() {
-    console.log('[CoordX Pro] init() called');
+    log('init() called');
     
     const hostname = window.location.hostname;
-    console.log('[CoordX Pro] Hostname:', hostname);
+    log('Hostname:', hostname);
 
     // Inject page script for network hooks
     injectPageScript();
 
     if (hostname.includes('geoguessr.com')) {
-      console.log('[CoordX Pro] GeoGuessr mode');
+      log('🎮 GeoGuessr mode');
       
-      // Parse initial data
+      // Parse initial data with retries
       parseNextData();
-      setTimeout(parseNextData, 500);
-      setTimeout(parseNextData, 1000);
+      setTimeout(() => parseNextData(), 500);
+      setTimeout(() => parseNextData(), 1000);
+      setTimeout(() => parseNextData(), 2000);
 
       // Setup click listener
       setupClickListener();
@@ -351,10 +437,11 @@
 
       // Send initial coords
       setTimeout(() => sendCurrentRoundCoords('init'), 1000);
+      setTimeout(() => sendCurrentRoundCoords('init2'), 2000);
     }
 
     if (hostname.includes('worldguessr.com')) {
-      console.log('[CoordX Pro] WorldGuessr mode');
+      log('🎮 WorldGuessr mode');
       setInterval(checkWorldGuessrIframe, 500);
     }
   }
@@ -362,11 +449,11 @@
   // Run when ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      console.log('[CoordX Pro] DOM loaded');
+      log('DOM loaded');
       init();
     });
   } else {
-    console.log('[CoordX Pro] DOM already ready');
+    log('DOM already ready');
     init();
   }
 

@@ -1,9 +1,10 @@
 /**
- * CoordX Pro — Background Service Worker (v1.3.0)
+ * CoordX Pro — Background Service Worker (v1.4.0)
  * 
- * DUAL APPROACH:
- * 1. Content script for WorldGuessr (iframe detection)
- * 2. webRequest API for GeoGuessr (intercept API calls directly)
+ * - Added in-extension logging system for debugging on mobile
+ * - DUAL APPROACH:
+ *   1. Content script for WorldGuessr (iframe detection)
+ *   2. webRequest API for GeoGuessr (intercept API calls directly)
  */
 
 /* ─── State ─────────────────────────────────────────────── */
@@ -20,6 +21,36 @@ const SUPPORTED_SITES = [
   'crazygames.com'
 ];
 
+/* ─── In-Extension Logging System ───────────────────────── */
+
+const LOG_KEY = 'coordx_logs';
+const MAX_LOGS = 100;
+
+async function addLog(message, time = new Date().toISOString()) {
+  try {
+    const result = await chrome.storage.local.get([LOG_KEY]);
+    let logs = result[LOG_KEY] || [];
+    
+    // Add new log
+    logs.push({ time, message });
+    
+    // Keep only last MAX_LOGS
+    if (logs.length > MAX_LOGS) {
+      logs = logs.slice(-MAX_LOGS);
+    }
+    
+    await chrome.storage.local.set({ [LOG_KEY]: logs });
+  } catch (e) {
+    console.error('[CoordX Pro] Failed to save log:', e);
+  }
+}
+
+function log(...args) {
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  console.log('[CoordX Pro]', msg);
+  addLog(msg);
+}
+
 /* ─── Side Panel Management ─────────────────────────────── */
 
 function initSidePanel() {
@@ -34,7 +65,7 @@ chrome.runtime.onInstalled.addListener(() => {
     lastCoords: null,
     lastAddress: null
   });
-  console.log('[CoordX Pro] Extension installed');
+  log('Extension installed v1.4.0');
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -84,12 +115,15 @@ function isDifferentCoord(lat, lng) {
 }
 
 function processAndSendCoords(lat, lng, source) {
-  if (!isValidCoord(lat, lng)) return;
+  if (!isValidCoord(lat, lng)) {
+    log('⚠️ Invalid coords rejected:', lat, lng);
+    return;
+  }
 
   const isNew = isDifferentCoord(lat, lng);
 
   if (isNew) {
-    console.log(`[CoordX Pro] ✅ NEW COORDS from ${source}:`, lat, lng);
+    log(`✅ NEW COORDS from ${source}:`, lat, lng);
     lastCoords = { lat, lng };
     chrome.storage.local.set({ lastCoords: { lat, lng } });
 
@@ -100,6 +134,8 @@ function processAndSendCoords(lat, lng, source) {
       lng,
       source
     }).catch(() => {});
+  } else {
+    log(`📍 Same coords from ${source}:`, lat, lng);
   }
 }
 
@@ -109,25 +145,25 @@ function processAndSendCoords(lat, lng, source) {
 async function parseGeoGuessrResponse(responseBody) {
   try {
     const data = JSON.parse(responseBody);
-    console.log('[CoordX Pro] Parsed GeoGuessr response');
+    log('Parsed GeoGuessr response');
 
     // Check for gameSnapshot
     if (data.gameSnapshot) {
       const snapshot = data.gameSnapshot;
-      const currentRound = snapshot.round || 1;
+      const currentRound = snapshot.round || 0;
       
       // Store all rounds
       if (snapshot.rounds && Array.isArray(snapshot.rounds)) {
         allRounds = snapshot.rounds;
-        console.log('[CoordX Pro] Stored', allRounds.length, 'rounds');
+        log('Stored', allRounds.length, 'rounds, current:', currentRound);
       }
 
       // Get current round coords
-      if (snapshot.rounds && snapshot.rounds[currentRound - 1]) {
-        const r = snapshot.rounds[currentRound - 1];
+      if (snapshot.rounds && snapshot.rounds[currentRound]) {
+        const r = snapshot.rounds[currentRound];
         if (isValidCoord(r.lat, r.lng)) {
-          currentRoundIndex = currentRound - 1;
-          processAndSendCoords(r.lat, r.lng, 'geoguessr_api_round' + currentRound);
+          currentRoundIndex = currentRound;
+          processAndSendCoords(r.lat, r.lng, 'geoguessr_api_round' + (currentRound + 1));
         }
       }
     }
@@ -147,25 +183,42 @@ async function parseGeoGuessrResponse(responseBody) {
     }
 
   } catch (e) {
-    console.warn('[CoordX Pro] Failed to parse response:', e.message);
+    log('Failed to parse response:', e.message);
   }
 }
-
-// Use declarativeNetRequest or webRequest to intercept responses
-// Note: In MV3, we can't easily read response bodies with webRequest
-// So we need to inject content script to do network interception
 
 /* ─── Message Handling ────────────────────────────────── */
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
 
+    case 'log':
+      // Log from content script
+      addLog(message.message, message.time);
+      sendResponse({ success: true });
+      break;
+
+    case 'getLogs':
+      // Get all logs
+      chrome.storage.local.get([LOG_KEY]).then(result => {
+        sendResponse({ logs: result[LOG_KEY] || [] });
+      });
+      return true;
+
+    case 'clearLogs':
+      // Clear all logs
+      chrome.storage.local.set({ [LOG_KEY]: [] }).then(() => {
+        log('Logs cleared');
+        sendResponse({ success: true });
+      });
+      return true;
+
     case 'resetSearch':
       lastCoords = null;
       allRounds = [];
       currentRoundIndex = 0;
       chrome.storage.local.remove(['lastCoords', 'lastAddress']);
-      console.log('[CoordX Pro] Search reset');
+      log('Search reset');
       sendResponse({ success: true });
       break;
 
@@ -182,6 +235,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'toggleTracking':
       trackingEnabled = message.enabled;
       chrome.storage.local.set({ trackingEnabled });
+      log('Tracking toggled:', trackingEnabled);
       sendResponse({ success: true, trackingEnabled });
       break;
 
@@ -195,17 +249,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const { lat, lng, source } = message;
 
       if (!isValidCoord(lat, lng)) {
-        console.warn('[CoordX Pro] Invalid coords:', lat, lng);
+        log('Invalid coords from content:', lat, lng);
         sendResponse({ success: false });
         return;
       }
 
       // If source indicates a round number, use that
-      if (source && source.includes('_r') || source.includes('round')) {
-        const roundMatch = source.match(/r?(\d+)/);
+      if (source && (source.includes('_r') || source.includes('round'))) {
+        const roundMatch = source.match(/r(\d+)/);
         if (roundMatch) {
           const round = parseInt(roundMatch[1]);
           if (round - 1 !== currentRoundIndex) {
+            log('Round from source:', round, '(was', currentRoundIndex + 1, ')');
             currentRoundIndex = round - 1;
             lastCoords = null; // Force new coords
           }
@@ -221,7 +276,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.rounds && Array.isArray(message.rounds)) {
         allRounds = message.rounds;
         currentRoundIndex = message.currentRound || 0;
-        console.log('[CoordX Pro] Received', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
+        log('Received', allRounds.length, 'rounds, current:', currentRoundIndex + 1);
         
         // Send current round coords
         if (allRounds[currentRoundIndex]) {
@@ -235,7 +290,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'advanceRound':
       if (currentRoundIndex < allRounds.length - 1) {
         currentRoundIndex++;
-        console.log('[CoordX Pro] Advanced to round', currentRoundIndex + 1);
+        log('Advanced to round', currentRoundIndex + 1);
         lastCoords = null; // Force new coords
         
         if (allRounds[currentRoundIndex]) {
@@ -251,6 +306,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-/* ─── Debug: Log when content script connects ──────────── */
-
-console.log('[CoordX Pro] Background v1.3.0 ready');
+log('Background v1.4.0 ready');

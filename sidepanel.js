@@ -1,7 +1,8 @@
 /**
- * CoordX Pro — Side Panel Script (v1.1.3)
+ * CoordX Pro — Side Panel Script (v1.4.0)
  * 
- * FIX: Restore coords from storage on open, but always fetch new geocoding
+ * - Added in-extension logging viewer
+ * - FIX: Restore coords from storage on open, but always fetch new geocoding
  */
 
 (function () {
@@ -26,13 +27,22 @@
     addrPostcode: $('addrPostcode'),
     addrCountry: $('addrCountry'),
     mapFrame: $('mapFrame'),
-    resetBtn: $('resetBtn')
+    resetBtn: $('resetBtn'),
+    // Logs
+    logsSection: $('logsSection'),
+    logsToggle: $('logsToggle'),
+    logsContainer: $('logsContainer'),
+    logsContent: $('logsContent'),
+    logCount: $('logCount'),
+    refreshLogsBtn: $('refreshLogsBtn'),
+    clearLogsBtn: $('clearLogsBtn')
   };
 
   let currentCoords = null;
   let geocodeTimeout = null;
+  let logsVisible = false;
 
-  console.log('[CoordX Pro] Side panel v1.1.3 loaded');
+  console.log('[CoordX Pro] Side panel v1.4.0 loaded');
 
   /* ─── Initialize ────────────────────────────────────── */
 
@@ -59,9 +69,73 @@
     } else {
       els.statusText.textContent = 'Searching for location...';
     }
+
+    // Load logs
+    loadLogs();
+    
+    // Auto-refresh logs every 2 seconds
+    setInterval(loadLogs, 2000);
   }
 
   init();
+
+  /* ─── Logs Management ───────────────────────────────── */
+
+  async function loadLogs() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'getLogs' });
+      const logs = response?.logs || [];
+      
+      els.logCount.textContent = logs.length;
+      
+      if (logs.length === 0) {
+        els.logsContent.innerHTML = '<div class="log-empty">No logs yet. Start a game to see debug info.</div>';
+        return;
+      }
+      
+      // Show last 50 logs (newest at bottom)
+      const recentLogs = logs.slice(-50);
+      els.logsContent.innerHTML = recentLogs.map(log => {
+        const time = log.time.split('T')[1]?.split('.')[0] || log.time;
+        const msg = escapeHtml(log.message);
+        const isError = msg.includes('error') || msg.includes('Error') || msg.includes('⚠️');
+        const isSuccess = msg.includes('✅') || msg.includes('NEW COORDS');
+        const className = isError ? 'log-error' : isSuccess ? 'log-success' : '';
+        return `<div class="log-entry ${className}"><span class="log-time">${time}</span> ${msg}</div>`;
+      }).join('');
+      
+      // Auto-scroll to bottom
+      els.logsContent.scrollTop = els.logsContent.scrollHeight;
+    } catch (e) {
+      console.error('[CoordX Pro] Failed to load logs:', e);
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Toggle logs visibility
+  els.logsToggle.addEventListener('click', () => {
+    logsVisible = !logsVisible;
+    els.logsContainer.style.display = logsVisible ? 'block' : 'none';
+    if (logsVisible) {
+      loadLogs();
+    }
+  });
+
+  // Refresh logs button
+  els.refreshLogsBtn.addEventListener('click', () => {
+    loadLogs();
+  });
+
+  // Clear logs button
+  els.clearLogsBtn.addEventListener('click', async () => {
+    await chrome.runtime.sendMessage({ type: 'clearLogs' });
+    loadLogs();
+  });
 
   /* ─── Coordinate Update Handler ─────────────────────── */
 
