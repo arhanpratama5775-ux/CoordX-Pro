@@ -24,24 +24,39 @@
   }).addTo(map);
 
   let marker = null;
+  let markerOuter = null;
 
   function updateMarker(lat, lng) {
     console.log('[CoordX Pro] Map: updateMarker', lat, lng);
 
-    // Remove old marker
+    // Remove old markers
     if (marker) {
       map.removeLayer(marker);
       marker = null;
     }
+    if (markerOuter) {
+      map.removeLayer(markerOuter);
+      markerOuter = null;
+    }
 
-    // Create new marker - just a simple dot
-    marker = L.circleMarker([lat, lng], {
-      radius: 10,
-      fillColor: '#ef4444',
-      color: '#fff',
-      weight: 2,
+    // Create donut marker - outer ring
+    markerOuter = L.circleMarker([lat, lng], {
+      radius: 16,
+      fillColor: 'transparent',
+      color: '#ef4444',
+      weight: 4,
       opacity: 1,
-      fillOpacity: 0.9
+      fillOpacity: 0
+    }).addTo(map);
+
+    // Inner small dot (center of donut)
+    marker = L.circleMarker([lat, lng], {
+      radius: 4,
+      fillColor: '#ef4444',
+      color: '#ef4444',
+      weight: 0,
+      opacity: 1,
+      fillOpacity: 1
     }).addTo(map);
 
     // Fly to location
@@ -71,6 +86,10 @@
       if (marker) {
         map.removeLayer(marker);
         marker = null;
+      }
+      if (markerOuter) {
+        map.removeLayer(markerOuter);
+        markerOuter = null;
       }
       map.flyTo([20, 0], 2, { duration: 0.5 });
     }

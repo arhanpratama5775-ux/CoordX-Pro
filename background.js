@@ -29,7 +29,7 @@ function log(msg) {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.27');
+  log('Extension installed v1.8.28');
 });
 
 /* ─── Auto Open Side Panel ───────────────────────────── */
@@ -115,4 +115,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.8.27 ready');
+log('Background v1.8.28 ready');
