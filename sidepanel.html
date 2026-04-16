@@ -8,11 +8,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
+  <!-- Animated stars background -->
+  <div class="stars-bg"></div>
+
   <div class="sidepanel">
     <!-- Header -->
     <header class="header">
       <div class="header-left">
-        <div class="logo-icon">📍</div>
+        <div class="logo-icon">🚀</div>
         <div class="header-text">
           <h1>CoordX Pro</h1>
           <span class="subtitle" id="statusText">Searching for location...</span>
@@ -122,25 +125,20 @@
         <div class="logs-content" id="logsContent" title="Click to toggle auto-scroll">
           <div class="log-empty">No logs yet. Start a game to see debug info.</div>
         </div>
-        <div class="logs-hint">💡 Click log area to toggle auto-scroll (green=on)</div>
+        <div class="logs-hint">Click log area to toggle auto-scroll (green=on)</div>
         <div class="logs-actions">
-          <button class="log-btn" id="refreshLogsBtn">🔄 Refresh</button>
-          <button class="log-btn" id="clearLogsBtn">🗑️ Clear</button>
+          <button class="log-btn" id="refreshLogsBtn">Refresh</button>
+          <button class="log-btn" id="clearLogsBtn">Clear</button>
         </div>
       </div>
     </section>
 
     <!-- Footer -->
     <footer class="footer">
-      <button class="reset-btn" id="resetBtn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
-        New Round
-      </button>
-      <span class="version">v1.8.19</span>
+      <div class="footer-content">
+        <span class="footer-text">Auto-detect enabled</span>
+        <span class="version">v1.8.20</span>
+      </div>
     </footer>
   </div>
 

@@ -1,7 +1,7 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.19)
+ * CoordX Pro — Side Panel Script (v1.8.20)
  * 
- * Better update detection and logging
+ * Dark Space Theme - Auto-detect enabled
  */
 
 (function () {
@@ -26,7 +26,6 @@
     addrPostcode: $('addrPostcode'),
     addrCountry: $('addrCountry'),
     mapFrame: $('mapFrame'),
-    resetBtn: $('resetBtn'),
     logsSection: $('logsSection'),
     logsToggle: $('logsToggle'),
     logsContainer: $('logsContainer'),
@@ -45,7 +44,7 @@
     console.log('[CoordX Pro Sidepanel]', msg);
   }
 
-  log('Side panel v1.8.19 loaded');
+  log('Side panel v1.8.20 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
@@ -249,34 +248,6 @@
     await chrome.runtime.sendMessage({ type: 'toggleTracking', enabled });
     els.statusText.textContent = enabled ? 'Searching...' : 'Paused';
     els.statusText.classList.toggle('paused', !enabled);
-  });
-
-  els.resetBtn.addEventListener('click', async () => {
-    log('Reset clicked');
-    await chrome.runtime.sendMessage({ type: 'resetSearch' });
-    currentLat = null;
-    currentLng = null;
-    els.latValue.textContent = '—';
-    els.lngValue.textContent = '—';
-    els.coordSection.classList.remove('active');
-    els.statusText.textContent = 'Searching...';
-    els.statusText.classList.remove('found');
-    
-    els.addrDisplayName.textContent = '—';
-    els.addrNeighborhood.textContent = '—';
-    els.addrSuburb.textContent = '—';
-    els.addrCity.textContent = '—';
-    els.addrDistrict.textContent = '—';
-    els.addrState.textContent = '—';
-    els.addrPostcode.textContent = '—';
-    els.addrCountry.textContent = '—';
-    els.addressSection.classList.remove('active');
-
-    if (els.mapFrame?.contentWindow) {
-      els.mapFrame.contentWindow.postMessage({ type: 'resetMap' }, '*');
-    }
-    
-    chrome.runtime.sendMessage({ type: 'forceUpdate' });
   });
 
   els.copyCoordsBtn.addEventListener('click', () => {

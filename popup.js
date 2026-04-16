@@ -1,6 +1,6 @@
 /**
- * CoordX Pro — Popup Script
- * Quick-access popup from the extension icon.
+ * CoordX Pro — Popup Script (v1.8.20)
+ * Dark Space Theme
  */
 
 (function () {
@@ -82,11 +82,11 @@
   function updateUI(enabled) {
     if (enabled) {
       statusDot.classList.remove('inactive');
-      statusText.textContent = 'Tracking active';
+      statusText.textContent = 'Auto-detect active';
       toggleBtn.textContent = 'Pause';
     } else {
       statusDot.classList.add('inactive');
-      statusText.textContent = 'Tracking paused';
+      statusText.textContent = 'Paused';
       toggleBtn.textContent = 'Resume';
     }
   }
