@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.50)
+ * CoordX Pro — Main World Script (v1.8.53)
  *
  * GeoGuessr only - XHR/Fetch intercept for coordinates
  * Place Guess using React Fiber (Location Resolver method)
@@ -82,6 +82,9 @@
       }
     } catch (e) {}
   }
+
+  // Expose searchForCoords globally for use by other modules
+  window.__coordxSearchForCoords = searchForCoords;
 
   // ─── INTERCEPT XHR ───────────────────────────────────────
 
@@ -206,27 +209,44 @@
     // Intercept GeoGuessr API calls
     const originalFetch = window.fetch;
     window.fetch = async (input, init) => {
-      const url = typeof input === 'string' ? input : (input.url || '');
+      // Safely get URL with null checks
+      let url = '';
+      try {
+        url = typeof input === 'string' ? input : (input?.url || '');
+      } catch (e) {
+        url = '';
+      }
+      
       const response = await originalFetch.apply(this, arguments);
 
-      // Check for multiplayer API calls
-      if (url.includes('/api/v3/games/') || url.includes('/api/v4/games/')) {
-        try {
+      try {
+        // Check for coordinate APIs
+        if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
           const clone = response.clone();
-          const data = await clone.json();
-
-          // Check for round changes
-          if (data.round || data.currentRound) {
-            const roundId = data.round?.id || data.currentRound || JSON.stringify(data);
-
-            if (roundId !== window.__coordxLastRound) {
-              console.log('[CoordX] API round change detected:', roundId);
-              window.__coordxLastRound = roundId;
-              setTimeout(() => attemptAutoPlace('api-round'), 800);
+          clone.text().then(text => {
+            if (window.__coordxSearchForCoords) {
+              window.__coordxSearchForCoords(text, 'fetch-api');
             }
-          }
-        } catch (e) {}
-      }
+          }).catch(() => {});
+        }
+
+        // Check for multiplayer API calls
+        if (url.includes('/api/v3/games/') || url.includes('/api/v4/games/')) {
+          const clone = response.clone();
+          clone.json().then(data => {
+            // Check for round changes
+            if (data.round || data.currentRound) {
+              const roundId = data.round?.id || data.currentRound || JSON.stringify(data);
+
+              if (roundId !== window.__coordxLastRound) {
+                console.log('[CoordX] API round change detected:', roundId);
+                window.__coordxLastRound = roundId;
+                setTimeout(() => attemptAutoPlace('api-round'), 800);
+              }
+            }
+          }).catch(() => {});
+        }
+      } catch (e) {}
 
       return response;
     };
@@ -415,18 +435,9 @@
     try {
       debug.push('Target:' + targetLat.toFixed(4) + ',' + targetLng.toFixed(4));
 
-      // Apply accuracy offset
-      let lat = targetLat;
-      let lng = targetLng;
-      
-      if (accuracy > 0) {
-        const degreesOffset = accuracy / 111;
-        const randomAngle = Math.random() * 2 * Math.PI;
-        const randomDistance = Math.random() * degreesOffset;
-        lat += Math.cos(randomAngle) * randomDistance;
-        lng += Math.sin(randomAngle) * randomDistance;
-        debug.push('Acc:' + accuracy + 'km');
-      }
+      // Offset already applied by sidepanel.js - use coordinates as-is
+      const lat = targetLat;
+      const lng = targetLng;
 
       // Step 1: Try Location Resolver method (direct React handler call)
       const result = placeMarkerReact(lat, lng, debug);

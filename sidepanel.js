@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.51)
+ * CoordX Pro — Side Panel Script (v1.8.53)
  *
  * Dark Space Theme - Auto-detect enabled
  * Multiplayer auto-place support
@@ -432,45 +432,51 @@
     }
   });
 
-  // Calculate random offset based on accuracy
+  // Calculate random offset based on accuracy (min-max range)
   function getAccuracyOffset(accuracy) {
-    let maxOffsetMeters;
+    let minOffsetMeters, maxOffsetMeters;
 
     switch (accuracy) {
       case 'perfect':
+        minOffsetMeters = 0;
         maxOffsetMeters = 0;           // 0m - Perfect score
         break;
       case 'near':
-        maxOffsetMeters = 500;          // 500m - ~4990-4999 points
+        minOffsetMeters = 400;         // Min 400m
+        maxOffsetMeters = 800;         // Max 800m - ~4985-4995 points
         break;
       case 'medium':
-        maxOffsetMeters = 2000;         // 2km - ~4950-4990 points
+        minOffsetMeters = 1500;        // Min 1.5km
+        maxOffsetMeters = 3000;        // Max 3km - ~4900-4970 points
         break;
       case 'far':
-        maxOffsetMeters = 10000;        // 10km - ~4500-4800 points
+        minOffsetMeters = 8000;        // Min 8km
+        maxOffsetMeters = 15000;       // Max 15km - ~4300-4700 points
         break;
       case 'veryfar':
-        maxOffsetMeters = 50000;        // 50km - ~3000-4000 points
+        minOffsetMeters = 40000;       // Min 40km
+        maxOffsetMeters = 70000;       // Max 70km - ~2500-3500 points
         break;
       case 'country':
-        maxOffsetMeters = 200000;       // 200km - Same country roughly
+        minOffsetMeters = 150000;      // Min 150km
+        maxOffsetMeters = 300000;      // Max 300km - Same country roughly
         break;
       case 'random':
-        maxOffsetMeters = 1000 + Math.random() * 99000; // 1-100km random
+        minOffsetMeters = 500;
+        maxOffsetMeters = 100000;      // 0.5-100km random
         break;
       default:
-        maxOffsetMeters = 500;
+        minOffsetMeters = 400;
+        maxOffsetMeters = 800;
     }
 
-    // Convert meters to degrees (approximate)
-    // 1 degree ≈ 111km at equator
+    // Convert to degrees (1 degree ≈ 111km)
+    const minOffsetDegrees = minOffsetMeters / 111000;
     const maxOffsetDegrees = maxOffsetMeters / 111000;
-
-    // Random angle
+    
+    // Random angle and distance (between min and max)
     const angle = Math.random() * 2 * Math.PI;
-
-    // Random distance (up to max)
-    const distance = Math.random() * maxOffsetDegrees;
+    const distance = minOffsetDegrees + Math.random() * (maxOffsetDegrees - minOffsetDegrees);
 
     return {
       lat: Math.sin(angle) * distance,
