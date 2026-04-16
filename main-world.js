@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.54)
+ * CoordX Pro — Main World Script (v1.8.57)
  *
  * GeoGuessr only - XHR/Fetch intercept for coordinates
  * Place Guess using React Fiber (Location Resolver method)
@@ -121,14 +121,20 @@
 
   const originalFetch = window.fetch;
   window.fetch = function(input, init) {
-    const url = typeof input === 'string' ? input : (input.url || '');
+    // Safely get URL with null checks
+    let url = '';
+    try {
+      url = typeof input === 'string' ? input : (input?.url || '');
+    } catch (e) {
+      url = '';
+    }
     const method = init?.method || 'GET';
 
     return originalFetch.apply(this, arguments).then(response => {
-      if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
+      if (url && (url.includes('GetMetadata') || url.includes('SingleImageSearch'))) {
         response.clone().text().then(text => {
           searchForCoords(text, method === 'POST' ? 'fetch-api' : 'fetch');
-        });
+        }).catch(() => {});
       }
       return response;
     });
