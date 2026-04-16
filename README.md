@@ -86,30 +86,20 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.29/Coor
 Chrome extension memiliki beberapa komponen yang berbeda:
 
 ```
-    ╔═════════════════════════════════════════════════════════════════╗
-    ║                     CHROME EXTENSION                             ║
-    ╠═════════════════════════════════════════════════════════════════╣
-    ║                                                                 ║
-    ║   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐        ║
-    ║   │   Manifest   │   │  Background  │   │  Side Panel  │        ║
-    ║   │    (JSON)    │   │   Script     │   │    (HTML)    │        ║
-    ║   │              │   │ (Service     │   │              │        ║
-    ║   │ Permissions  │   │   Worker)    │   │     UI       │        ║
-    ║   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘        ║
-    ║          │                  │                  │               ║
-    ║          └──────────────────┼──────────────────┘               ║
-    ║                             │                                  ║
-    ║             ┌───────────────▼───────────────┐                  ║
-    ║             │       CONTENT SCRIPT          │                  ║
-    ║             │    (Inject ke halaman web)    │                  ║
-    ║             └───────────────┬───────────────┘                  ║
-    ║                             │                                  ║
-    ║             ┌───────────────▼───────────────┐                  ║
-    ║             │      MAIN WORLD SCRIPT        │                  ║
-    ║             │  (Berjalan di context halaman)│                  ║
-    ║             └───────────────────────────────┘                  ║
-    ║                                                                 ║
-    ╚═════════════════════════════════════════════════════════════════╝
+                         CHROME EXTENSION
+    ============================================================
+
+      Manifest          Background          Side Panel
+       (JSON)            Script               (HTML)
+                         (Service
+      Permissions         Worker)               UI
+
+                         CONTENT SCRIPT
+                      (Inject ke halaman web)
+
+                       MAIN WORLD SCRIPT
+                   (Berjalan di context halaman)
+
 ```
 
 ### 📁 Struktur File Extension
@@ -253,67 +243,41 @@ function searchForCoords(text, source) {
 ### 📊 Flow Data Lengkap
 
 ```
-    ╔═════════════════════════════════════════════════════════════════════╗
-    ║                          GEOGUESSR PAGE                             ║
-    ╠═════════════════════════════════════════════════════════════════════╣
-    ║                                                                   ║
-    ║   1. Player load Street View                                      ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   2. GeoGuessr request ke Google Maps API                         ║
-    ║                          │                                        ║
-    ║       GET /pb/api/geo/photometa/v1?...                            ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   ┌─────────────────────────────────────────────┐                 ║
-    ║   │      MAIN WORLD SCRIPT INTERCEPT            │                 ║
-    ║   ├─────────────────────────────────────────────┤                 ║
-    ║   │  • XHR/Fetch intercepted                    │                 ║
-    ║   │  • Response dibaca                          │                 ║
-    ║   │  • Regex extract: [null,null,LAT,LNG]       │                 ║
-    ║   └─────────────────────────────────────────────┘                 ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   4. window.postMessage({ type: 'COORDX_COORDS', lat, lng })      ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   ┌─────────────────────────────────────────────┐                 ║
-    ║   │            CONTENT SCRIPT                   │                 ║
-    ║   ├─────────────────────────────────────────────┤                 ║
-    ║   │  • Listen message dari main world           │                 ║
-    ║   │  • Validasi koordinat                       │                 ║
-    ║   │  • chrome.runtime.sendMessage()             │                 ║
-    ║   └─────────────────────────────────────────────┘                 ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   ┌─────────────────────────────────────────────┐                 ║
-    ║   │           BACKGROUND SCRIPT                 │                 ║
-    ║   ├─────────────────────────────────────────────┤                 ║
-    ║   │  chrome.storage.local.set({ lastCoords })   │                 ║
-    ║   └─────────────────────────────────────────────┘                 ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   ┌─────────────────────────────────────────────┐                 ║
-    ║   │              SIDE PANEL                     │                 ║
-    ║   ├─────────────────────────────────────────────┤                 ║
-    ║   │  • chrome.storage.onChanged listener        │                 ║
-    ║   │  • Update UI (koordinat, alamat)            │                 ║
-    ║   │  • Kirim ke map iframe                      │                 ║
-    ║   │  • Fetch reverse geocoding                  │                 ║
-    ║   └─────────────────────────────────────────────┘                 ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   ┌─────────────────────────────────────────────┐                 ║
-    ║   │              MAP (LEAFLET)                  │                 ║
-    ║   ├─────────────────────────────────────────────┤                 ║
-    ║   │  • Place marker di peta                     │                 ║
-    ║   │  • Fly to location                          │                 ║
-    ║   └─────────────────────────────────────────────┘                 ║
-    ║                          │                                        ║
-    ║                          ▼                                        ║
-    ║   9. Player lihat lokasi! 🎯                                      ║
-    ║                                                                   ║
-    ╚═════════════════════════════════════════════════════════════════════╝
+                          GEOGUESSR PAGE
+    ================================================================
+
+   1. Player load Street View
+                  v
+   2. GeoGuessr request ke Google Maps API
+       GET /pb/api/geo/photometa/v1?...
+                  v
+   3. MAIN WORLD SCRIPT INTERCEPT
+      * XHR/Fetch intercepted
+      * Response dibaca
+      * Regex extract: [null,null,LAT,LNG]
+                  v
+   4. window.postMessage({ type: 'COORDX_COORDS', lat, lng })
+                  v
+   5. CONTENT SCRIPT
+      * Listen message dari main world
+      * Validasi koordinat
+      * chrome.runtime.sendMessage()
+                  v
+   6. BACKGROUND SCRIPT
+      * chrome.storage.local.set({ lastCoords })
+                  v
+   7. SIDE PANEL
+      * chrome.storage.onChanged listener
+      * Update UI (koordinat, alamat)
+      * Kirim ke map iframe
+      * Fetch reverse geocoding
+                  v
+   8. MAP (LEAFLET)
+      * Place marker di peta
+      * Fly to location
+                  v
+   9. Player lihat lokasi! 🎯
+
 ```
 
 ### 🔄 Auto Round Detection
