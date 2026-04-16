@@ -117,12 +117,11 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
 ### Installation Steps
 
 1. Download ZIP dari link di atas
-2. Extract ZIP file
-3. Buka Chrome → `chrome://extensions/`
-4. Enable **Developer mode** (toggle kanan atas)
-5. Klik **Load unpacked**
-6. Pilih folder yang sudah di-extract
-7. Selesai! 🎉
+2. Buka Chrome → `chrome://extensions/`
+3. Enable **Developer mode** (toggle kanan atas)
+4. Klik **(from .zip/.crx/.user.js)**
+5. Pilih CoordX-Pro-main.zip
+6. Selesai! 🎉
 
 ---
 
@@ -133,7 +132,7 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
 3. Klik icon extension CoordX Pro
 4. **PC/Laptop:** Popup muncul → klik "Open Panel"
 5. Koordinat akan auto-detect saat Street View load
-6. Ronden berganti? Auto-detect lokasi baru!
+6. Ronde berganti? Auto-detect lokasi baru!
 
 ---
 
