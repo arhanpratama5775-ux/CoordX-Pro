@@ -1,15 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.8.14)
+ * CoordX Pro — Content Script (v1.8.15)
  * 
- * Content script is the SOURCE OF TRUTH for round index
- * Filters coordinates based on current round
+ * Auto-sync round index from incoming coordinates
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV114Injected) return;
-  window.__coordxProV114Injected = true;
+  if (window.__coordxProV115Injected) return;
+  window.__coordxProV115Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -17,11 +16,14 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.14 loaded');
-  logToBackground('Content v1.8.14 loaded');
+  console.log('[CoordX Pro] Content v1.8.15 loaded');
+  logToBackground('Content v1.8.15 loaded');
 
-  // Current round index - THIS IS THE SOURCE OF TRUTH
+  // Current round index
   let currentRoundIndex = 0;
+  
+  // Track incoming rounds to auto-sync
+  let incomingRoundCounts = {};
   
   // Last sent coordinates
   let lastSentLat = null;
@@ -63,7 +65,7 @@
     lastSentLat = lat;
     lastSentLng = lng;
 
-    logToBackground('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    logToBackground('✅ SENT: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     try {
       chrome.runtime.sendMessage({
@@ -88,14 +90,25 @@
     if (data.type === 'COORDX_COORDS') {
       const { lat, lng, source, roundIndex } = data;
       
-      // If coordinate has a round index, check if it matches current round
+      // If coordinate has a round index
       if (roundIndex !== null && roundIndex !== undefined) {
+        // Count incoming rounds
+        incomingRoundCounts[roundIndex] = (incomingRoundCounts[roundIndex] || 0) + 1;
+        
+        // Auto-sync: if we receive 3+ coords from same round, assume that's current
+        if (incomingRoundCounts[roundIndex] >= 3 && roundIndex !== currentRoundIndex) {
+          logToBackground('🔄 Auto-sync round: ' + currentRoundIndex + ' → ' + roundIndex);
+          currentRoundIndex = roundIndex;
+          lastSentLat = null;  // Reset to allow new coords
+          lastSentLng = null;
+          incomingRoundCounts = {};  // Reset counts
+        }
+        
         if (roundIndex !== currentRoundIndex) {
-          // Skip coordinates from other rounds - log for debug
-          logToBackground('⏭️ Skip round ' + roundIndex + ' (current: ' + currentRoundIndex + ')');
+          // Skip coordinates from other rounds
+          logToBackground('⏭️ Skip r' + roundIndex + ' (current: r' + currentRoundIndex + ')');
           return;
         }
-        logToBackground('✓ Round match! ' + roundIndex + ' = ' + currentRoundIndex);
       }
       
       sendCoords(lat, lng, source);
@@ -120,6 +133,7 @@
       blockedLng = null;
       blockUntil = 0;
       currentRoundIndex = 0;
+      incomingRoundCounts = {};
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -139,76 +153,56 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Detect round from UI
-  function detectRoundFromUI() {
-    const roundPatterns = [
-      /round\s*(\d+)/i,
-      /(\d+)\s*\/\s*\d+/,
-      /ronde\s*(\d+)/i
-    ];
-
-    const selectors = [
-      '[class*="round"]',
-      '[class*="Round"]',
-      '[data-qa="round-number"]',
-      'h1', 'h2', 'h3'
-    ];
-
-    for (const selector of selectors) {
-      try {
-        const elements = document.querySelectorAll(selector);
-        for (const el of elements) {
-          const text = el.innerText || el.textContent;
-          if (!text) continue;
-
-          for (const pattern of roundPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-              const roundNum = parseInt(match[1]);
-              if (roundNum > 0 && roundNum < 100) {
-                return roundNum - 1; // Convert to 0-based index
-              }
-            }
-          }
-        }
-      } catch (e) {}
-    }
-
-    return null;
-  }
-
   // Handle NEXT button click
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
       logToBackground('NEXT clicked');
       
-      // Increment round index
       currentRoundIndex++;
-      logToBackground('📍 Round index: ' + currentRoundIndex);
+      logToBackground('📍 Round: ' + currentRoundIndex);
       
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 10000; // 10 seconds
+        blockUntil = Date.now() + 10000;
         logToBackground('Block exact: ' + blockedLat.toFixed(4));
       }
       
-      // Reset last sent to allow new coords
       lastSentLat = null;
       lastSentLng = null;
+      incomingRoundCounts = {};
     }
   }, true);
 
-  // Periodically detect round from UI (as backup)
+  // UI detection as backup
   setInterval(() => {
-    const uiRound = detectRoundFromUI();
-    if (uiRound !== null && uiRound !== currentRoundIndex) {
-      currentRoundIndex = uiRound;
-      logToBackground('📍 Round from UI: ' + currentRoundIndex);
-      lastSentLat = null;
-      lastSentLng = null;
+    // Look for round indicator in various formats
+    const body = document.body.innerText;
+    
+    // Pattern: "Round 3", "3 / 5", "Round 3 of 5"
+    const patterns = [
+      /round\s*(\d+)/i,
+      /(\d+)\s*\/\s*\d+\s*$/
+    ];
+    
+    for (const pattern of patterns) {
+      const matches = body.match(pattern);
+      if (matches) {
+        const roundNum = parseInt(matches[1]);
+        if (roundNum > 0 && roundNum < 100) {
+          const detectedIndex = roundNum - 1;
+          if (detectedIndex !== currentRoundIndex) {
+            currentRoundIndex = detectedIndex;
+            logToBackground('📍 UI round: ' + currentRoundIndex);
+            lastSentLat = null;
+            lastSentLng = null;
+            incomingRoundCounts = {};
+          }
+          break;
+        }
+      }
     }
-  }, 1000);
+  }, 2000);
 
 })();

@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.14)
+ * CoordX Pro — Main World Script (v1.8.15)
  * 
  * Send ALL coordinates with round index info, let content script filter
  */
@@ -8,7 +8,7 @@
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.14');
+  console.log('[CoordX Pro] Main world v1.8.15');
 
   function sendCoords(lat, lng, source, roundIndex) {
     window.postMessage({
@@ -143,7 +143,7 @@
     }
   }
 
-  sendLog('Main world v1.8.14 ready');
+  sendLog('Main world v1.8.15 ready');
   checkNextData();
   checkWindow();
 
