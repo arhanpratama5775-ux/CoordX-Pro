@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.26)
+ * CoordX Pro — Background Service Worker (v1.8.27)
  */
 
 const LOG_KEY = 'coordx_logs';
@@ -29,7 +29,19 @@ function log(msg) {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.26');
+  log('Extension installed v1.8.27');
+});
+
+/* ─── Auto Open Side Panel ───────────────────────────── */
+
+// Open side panel when extension icon is clicked
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+    log('Side panel opened via action click');
+  } catch (err) {
+    log('Failed to open side panel: ' + err.message);
+  }
 });
 
 /* ─── Message Handler ────────────────────────────────── */
@@ -103,4 +115,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.8.26 ready');
+log('Background v1.8.27 ready');

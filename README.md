@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.26-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
+[![Version](https://img.shields.io/badge/version-1.8.27-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, dan peta interaktif. Works di single player dan multiplayer!
@@ -66,25 +66,29 @@ Google Maps API (GetMetadata / SingleImageSearch)
 | 📍 **Reverse Geocoding** | Alamat lengkap via OpenStreetMap |
 | 📋 **Copy Coords** | One-click copy coordinates |
 | 🌙 **Dark Space Theme** | UI hitam dengan animated stars |
-| 🖥️ **Popup Support** | Popup untuk PC/Laptop |
-| 🐛 **Debug Logs** | In-extension logging untuk debugging |
+| ⚡ **Auto Open Panel** | Side panel langsung terbuka saat klik icon |
+| 📱 **Mobile Friendly** | Works di HP tanpa perlu klik tombol tambahan |
 
 ---
 
 ## 📥 Download & Install
 
-### Download
+### Download dari Releases
+
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/latest)**
+
+Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.27/CoordX-Pro-v1.8.27.zip
 ```
 
 ### Installation Steps
 
-1. Download ZIP dari link di atas
+1. Download ZIP dari **Releases** (link di atas)
 2. Buka Chrome → `chrome://extensions/`
 3. Enable **Developer mode** (toggle kanan atas)
 4. Klik **(from .zip/.crx/.user.js)**
-5. Pilih `CoordX-Pro-main.zip`
+5. Pilih file ZIP yang sudah didownload
 6. Selesai! 🎉
 
 ---
@@ -94,13 +98,18 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
 1. Buka **GeoGuessr**
 2. Mulai game (single player atau multiplayer)
 3. Klik icon extension CoordX Pro
-4. **PC/Laptop:** Popup muncul → klik "Open Panel"
+4. **Side panel otomatis terbuka!** ✅
 5. Koordinat akan auto-detect saat Street View load
 6. Ronde berganti? Auto-detect lokasi baru! ✅
 
 ---
 
 ## 📝 Changelog
+
+### v1.8.27
+- ⚡ **Auto open side panel** - Tidak perlu klik "Open Panel" lagi!
+- 🗑️ Removed popup - Side panel langsung terbuka saat klik icon
+- 📱 Better mobile experience
 
 ### v1.8.26
 - Clean up code, focus on GeoGuessr only
