@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.54-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.8.55-blue)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, peta interaktif, dan **AUTO PLACE GUESS!** 🎯
@@ -41,7 +41,7 @@
 | 📍 **Reverse Geocoding** | Alamat lengkap via OpenStreetMap |
 | 🏳️ **Country Flag** | Emoji bendera negara di header! |
 | 📋 **Copy Coords** | One-click copy coordinates |
-| 🌙 **Dark Space Theme** | UI hitam dengan animated stars |
+| 🌙 **Cold Everest Theme** | UI hitam dingin dengan background Everest |
 | ⚡ **Auto Open Panel** | Side panel langsung terbuka saat klik icon |
 | 📱 **Mobile Friendly** | Works di HP tanpa perlu klik tombol tambahan |
 
@@ -51,11 +51,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.54/CoordX-Pro-v1.8.54.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.55/CoordX-Pro-v1.8.55.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.54/CoordX-Pro-v1.8.54.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.55/CoordX-Pro-v1.8.55.zip
 ```
 
 ### Installation Steps
@@ -508,6 +508,14 @@ function extractAndSendCoords(text) {
 ---
 
 ## 📝 Changelog
+
+### v1.8.55 ❄️
+- 🏔️ **REAL MOUNT EVEREST BACKGROUND!** - Background pake foto Everest asli!
+- ❄️ **COLD BLACK THEME** - Tema hitam dingin dengan warna #050608
+- 🎨 **COLD BLUE ACCENTS** - Semua glow dan highlight pake warna biru dingin
+- 🌨️ **SUBTLE SNOW PARTICLES** - Animasi partikel salju yang halus
+- ✨ **ICY GLOW EFFECTS** - Efek glow biru es di semua elemen interaktif
+- 🔥 **CLEANER UI** - Hapus komponen yang nggak kepake
 
 ### v1.8.54 🏔️
 - 🏔️ **NEW COLD EVEREST THEME!** - UI dingin dengan background gunung Everest!
