@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.12)
+ * CoordX Pro — Side Panel Script (v1.8.13)
  * 
  * Better update detection and logging
  */
@@ -45,7 +45,7 @@
     console.log('[CoordX Pro Sidepanel]', msg);
   }
 
-  log('Side panel v1.8.12 loaded');
+  log('Side panel v1.8.13 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 

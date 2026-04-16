@@ -1,14 +1,15 @@
 /**
- * CoordX Pro — Content Script (v1.8.12)
+ * CoordX Pro — Content Script (v1.8.13)
  * 
- * Track round index and send to main-world
+ * Content script is the SOURCE OF TRUTH for round index
+ * Filters coordinates based on current round
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV186Injected) return;
-  window.__coordxProV186Injected = true;
+  if (window.__coordxProV113Injected) return;
+  window.__coordxProV113Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,16 +17,17 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.12 loaded');
-  logToBackground('Content v1.8.12 loaded');
+  console.log('[CoordX Pro] Content v1.8.13 loaded');
+  logToBackground('Content v1.8.13 loaded');
 
+  // Current round index - THIS IS THE SOURCE OF TRUTH
+  let currentRoundIndex = 0;
+  
+  // Last sent coordinates
   let lastSentLat = null;
   let lastSentLng = null;
   
-  // Track current round index
-  let currentRoundIndex = 0;
-  
-  // Block only the exact coords (not nearby)
+  // Block exact coords after NEXT
   let blockedLat = null;
   let blockedLng = null;
   let blockUntil = 0;
@@ -39,14 +41,6 @@
       Math.abs(lng) > 0.001;
   }
 
-  // Send round index to main-world script
-  function sendRoundToMainWorld(roundIndex) {
-    window.postMessage({
-      type: 'COORDX_ROUND_CHANGE',
-      roundIndex: roundIndex
-    }, '*');
-  }
-
   function sendCoords(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return false;
 
@@ -55,7 +49,6 @@
     // Block EXACT coords only (not nearby)
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
-        // Exact same coords blocked
         return false;
       }
     }
@@ -93,7 +86,16 @@
     if (!data) return;
 
     if (data.type === 'COORDX_COORDS') {
-      const { lat, lng, source } = data;
+      const { lat, lng, source, roundIndex } = data;
+      
+      // If coordinate has a round index, check if it matches current round
+      if (roundIndex !== null && roundIndex !== undefined) {
+        if (roundIndex !== currentRoundIndex) {
+          // Skip coordinates from other rounds
+          return;
+        }
+      }
+      
       sendCoords(lat, lng, source);
     }
     
@@ -116,7 +118,6 @@
       blockedLng = null;
       blockUntil = 0;
       currentRoundIndex = 0;
-      sendRoundToMainWorld(0);
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -174,7 +175,7 @@
     return null;
   }
 
-  // Next button - increment round index and block EXACT coords only
+  // Handle NEXT button click
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
@@ -184,9 +185,6 @@
       currentRoundIndex++;
       logToBackground('📍 Round index: ' + currentRoundIndex);
       
-      // Send round change to main-world
-      sendRoundToMainWorld(currentRoundIndex);
-      
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
@@ -194,18 +192,20 @@
         logToBackground('Block exact: ' + blockedLat.toFixed(4));
       }
       
+      // Reset last sent to allow new coords
       lastSentLat = null;
       lastSentLng = null;
     }
   }, true);
 
-  // Also detect round from UI periodically
+  // Periodically detect round from UI (as backup)
   setInterval(() => {
     const uiRound = detectRoundFromUI();
     if (uiRound !== null && uiRound !== currentRoundIndex) {
       currentRoundIndex = uiRound;
-      logToBackground('📍 Round detected from UI: ' + currentRoundIndex);
-      sendRoundToMainWorld(currentRoundIndex);
+      logToBackground('📍 Round from UI: ' + currentRoundIndex);
+      lastSentLat = null;
+      lastSentLng = null;
     }
   }, 1000);
 

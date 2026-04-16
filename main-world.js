@@ -1,21 +1,22 @@
 /**
- * CoordX Pro — Main World Script (v1.8.12)
+ * CoordX Pro — Main World Script (v1.8.13)
  * 
- * Track current round index and use correct round coordinates
+ * Send ALL coordinates with round index info, let content script filter
  */
 
 (function() {
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.12');
+  console.log('[CoordX Pro] Main world v1.8.13');
 
-  function sendCoords(lat, lng, source) {
+  function sendCoords(lat, lng, source, roundIndex) {
     window.postMessage({
       type: 'COORDX_COORDS',
       lat: lat,
       lng: lng,
-      source: source
+      source: source,
+      roundIndex: roundIndex  // Include round index from path
     }, '*');
   }
 
@@ -46,116 +47,13 @@
     return true;
   }
 
-  // Track current round
-  let currentRoundIndex = 0;
-  let lastRoundIndex = -1;
-
-  // Detect current round from UI
-  function detectRoundFromUI() {
-    // Look for "Round X of Y" or similar patterns
-    const roundPatterns = [
-      /round\s*(\d+)/i,
-      /(\d+)\s*\/\s*\d+/,
-      /ronde\s*(\d+)/i
-    ];
-
-    // Check common UI elements
-    const selectors = [
-      '[class*="round"]',
-      '[class*="Round"]', 
-      '[data-qa="round-number"]',
-      'h1', 'h2', 'h3', 'h4',
-      '.game-header', '.game-info'
-    ];
-
-    for (const selector of selectors) {
-      try {
-        const elements = document.querySelectorAll(selector);
-        for (const el of elements) {
-          const text = el.innerText || el.textContent;
-          if (!text) continue;
-
-          for (const pattern of roundPatterns) {
-            const match = text.match(pattern);
-            if (match) {
-              const roundNum = parseInt(match[1]);
-              if (roundNum > 0 && roundNum < 100) {
-                return roundNum - 1; // Convert to 0-based index
-              }
-            }
-          }
-        }
-      } catch (e) {}
+  // Extract round index from path like "gameSnapshot.rounds.2.lat/lng"
+  function extractRoundIndex(path) {
+    const match = path.match(/rounds\.(\d+)/);
+    if (match) {
+      return parseInt(match[1]);
     }
-
-    // Check URL for round parameter
-    try {
-      const url = new URL(window.location.href);
-      const roundParam = url.searchParams.get('round');
-      if (roundParam) {
-        const roundNum = parseInt(roundParam);
-        if (roundNum > 0) return roundNum - 1;
-      }
-    } catch (e) {}
-
-    return null;
-  }
-
-  // Listen for round change messages from content script
-  window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
-    const data = event.data;
-    if (data?.type === 'COORDX_ROUND_CHANGE') {
-      currentRoundIndex = data.roundIndex;
-      sendLog('📍 Round index updated to: ' + currentRoundIndex);
-    }
-  });
-
-  // Get round from gameSnapshot if available
-  function getRoundIndexFromGameSnapshot(pp) {
-    // Some game modes have a currentRound or roundIndex field
-    if (pp.gameSnapshot?.state?.round) {
-      return pp.gameSnapshot.state.round;
-    }
-    if (pp.gameSnapshot?.roundIndex !== undefined) {
-      return pp.gameSnapshot.roundIndex;
-    }
-    if (pp.game?.currentRound !== undefined) {
-      return pp.game.currentRound;
-    }
-    return null;
-  }
-
-  let lastLat = null;
-  let lastLng = null;
-
-  function sendIfDifferent(lat, lng, source) {
-    if (!isValidCoord(lat, lng)) return;
-    if (!isValidCoordPath(source)) return;
-    
-    // Check if this is a "rounds" path and apply round index
-    if (source.includes('rounds.')) {
-      // Extract which round index this coordinate belongs to
-      const match = source.match(/rounds\.(\d+)/);
-      if (match) {
-        const coordRoundIndex = parseInt(match[1]);
-        // Only use coordinates from the CURRENT round
-        if (coordRoundIndex !== currentRoundIndex) {
-          return; // Skip coordinates from other rounds
-        }
-      }
-    }
-    
-    if (lastLat !== null && lastLng !== null) {
-      if (Math.abs(lat - lastLat) < 0.0001 && Math.abs(lng - lastLng) < 0.0001) {
-        return;
-      }
-    }
-    
-    lastLat = lat;
-    lastLng = lng;
-    sendLog('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-    sendCoords(lat, lng, source);
+    return null;  // Not from rounds array
   }
 
   // Search for coords recursively
@@ -167,7 +65,8 @@
     if (isValidCoord(obj.lat, obj.lng)) {
       const p = path + '.lat/lng';
       if (isValidCoordPath(p)) {
-        found.push({ lat: obj.lat, lng: obj.lng, path: p });
+        const roundIdx = extractRoundIndex(p);
+        found.push({ lat: obj.lat, lng: obj.lng, path: p, roundIndex: roundIdx });
       }
     }
     
@@ -183,6 +82,7 @@
   }
 
   let loggedOnce = false;
+  let lastSentKey = '';
 
   function checkNextData() {
     const script = document.getElementById('__NEXT_DATA__');
@@ -195,7 +95,7 @@
       if (!pp) return;
 
       if (!loggedOnce) {
-        sendLog('=== pageProps ===');
+        sendLog('=== pageProps keys ===');
         for (const key of Object.keys(pp)) {
           const val = pp[key];
           if (val === null) {
@@ -211,32 +111,19 @@
         loggedOnce = true;
       }
 
-      // Try to detect current round from gameSnapshot
-      const gsRound = getRoundIndexFromGameSnapshot(pp);
-      if (gsRound !== null && gsRound !== currentRoundIndex) {
-        currentRoundIndex = gsRound;
-        sendLog('📍 Round from gameSnapshot: ' + currentRoundIndex);
-      }
-
-      // Try to detect from UI
-      const uiRound = detectRoundFromUI();
-      if (uiRound !== null && uiRound !== currentRoundIndex) {
-        currentRoundIndex = uiRound;
-        sendLog('📍 Round from UI: ' + currentRoundIndex);
-      }
-
-      // Log round index if changed
-      if (currentRoundIndex !== lastRoundIndex) {
-        sendLog('📍 Current round index: ' + currentRoundIndex);
-        lastRoundIndex = currentRoundIndex;
-      }
-
-      // Search all objects, but only send coordinates from current round
+      // Search all objects and send coordinates with round index
       for (const key of Object.keys(pp)) {
         if (pp[key] && typeof pp[key] === 'object') {
           const found = searchForCoords(pp[key], key, 0);
           for (const f of found) {
-            sendIfDifferent(f.lat, f.lng, f.path);
+            // Create unique key to avoid duplicates within same check
+            const coordKey = f.path + ':' + f.lat.toFixed(4) + ',' + f.lng.toFixed(4);
+            if (coordKey !== lastSentKey) {
+              lastSentKey = coordKey;
+              sendLog('[MW] Found: ' + f.path + ' = ' + f.lat.toFixed(4) + ', ' + f.lng.toFixed(4) + 
+                      (f.roundIndex !== null ? ' (round ' + f.roundIndex + ')' : ''));
+              sendCoords(f.lat, f.lng, f.path, f.roundIndex);
+            }
           }
         }
       }
@@ -250,28 +137,18 @@
       if (window[key]) {
         const found = searchForCoords(window[key], key, 0);
         for (const f of found) {
-          sendIfDifferent(f.lat, f.lng, f.path);
+          sendCoords(f.lat, f.lng, f.path, f.roundIndex);
         }
       }
     }
   }
 
-  sendLog('Main world v1.8.12');
+  sendLog('Main world v1.8.13 ready');
   checkNextData();
   checkWindow();
 
+  // Poll for new data
   setInterval(checkNextData, 1000);
   setInterval(checkWindow, 2000);
-
-  // Periodically check UI for round changes
-  setInterval(() => {
-    const uiRound = detectRoundFromUI();
-    if (uiRound !== null && uiRound !== currentRoundIndex) {
-      currentRoundIndex = uiRound;
-      sendLog('📍 Round changed (UI): ' + currentRoundIndex);
-      lastLat = null; // Reset to allow new coords
-      lastLng = null;
-    }
-  }, 500);
 
 })();
