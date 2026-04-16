@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.49)
+ * CoordX Pro — Background Service Worker (v1.8.50)
  */
 
 const LOG_KEY = 'coordx_logs';

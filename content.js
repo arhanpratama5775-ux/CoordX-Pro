@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.49)
+ * CoordX Pro — Content Script (v1.8.50)
  *
  * GeoGuessr only - handle coords from main world
  * Support: Single Player, Challenge, Multiplayer/Duels

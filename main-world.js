@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.49)
+ * CoordX Pro — Main World Script (v1.8.50)
  *
  * GeoGuessr only - XHR/Fetch intercept for coordinates
  * Place Guess using React Fiber (Location Resolver method)
@@ -310,19 +310,25 @@
 
     switch (accuracy) {
       case 'perfect':
-        maxOffsetMeters = 0;
+        maxOffsetMeters = 0;           // 0m - Perfect score
         break;
       case 'near':
-        maxOffsetMeters = 100;
+        maxOffsetMeters = 500;          // 500m - ~4990-4999 points
         break;
       case 'medium':
-        maxOffsetMeters = 500;
+        maxOffsetMeters = 2000;         // 2km - ~4950-4990 points
         break;
       case 'far':
-        maxOffsetMeters = 2000;
+        maxOffsetMeters = 10000;        // 10km - ~4500-4800 points
+        break;
+      case 'veryfar':
+        maxOffsetMeters = 50000;        // 50km - ~3000-4000 points
+        break;
+      case 'country':
+        maxOffsetMeters = 200000;       // 200km - Same country roughly
         break;
       case 'random':
-        maxOffsetMeters = Math.random() * 5000;
+        maxOffsetMeters = 1000 + Math.random() * 99000; // 1-100km random
         break;
       default:
         maxOffsetMeters = 500;

@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.49-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.8.50-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, peta interaktif, dan **AUTO PLACE GUESS!** 🎯
@@ -49,11 +49,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.49/CoordX-Pro-v1.8.49.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.50/CoordX-Pro-v1.8.50.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.49/CoordX-Pro-v1.8.49.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.50/CoordX-Pro-v1.8.50.zip
 ```
 
 ### Installation Steps
@@ -78,35 +78,27 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.49/Coor
 
 ### 🎯 Auto Place Guess
 
-**PENTING:** Untuk menggunakan fitur Auto Place Guess, kamu **HARUS membuka peta guess terlebih dahulu!**
+Fitur ini **LANGSUNG BEKERJA** tanpa perlu buka peta! Cukup klik tombol dan marker akan otomatis ditempatkan.
 
 #### Langkah-langkah:
 1. Mainkan game GeoGuessr seperti biasa
-2. **BUKA PETA GUESS** - Klik tombol map di pojok kanan bawah untuk membuka peta:
-   ```
-   ┌─────────────────────────────┐
-   │                             │
-   │      STREET VIEW            │
-   │                             │
-   │                             │
-   │                    ┌─────┐  │
-   │                    │ MAP │  │ ← Klik tombol ini dulu!
-   │                    └─────┘  │
-   └─────────────────────────────┘
-   ```
-3. Setelah peta terbuka, klik tombol **"Place Guess"** di side panel
-4. Marker akan otomatis ditempatkan di lokasi yang terdeteksi! 🎯
+2. Tunggu koordinat terdeteksi di side panel
+3. Pilih accuracy yang diinginkan
+4. Klik tombol **"Place Guess"** di side panel
+5. Marker akan otomatis ditempatkan! 🎯
 
 #### Accuracy Settings:
-| Setting | Description |
-|---------|-------------|
-| **Perfect** | Lokasi persis (0m offset) |
-| **Near** | ±100 meter dari lokasi asli |
-| **Medium** | ±500 meter dari lokasi asli |
-| **Far** | ±2 km dari lokasi asli |
-| **Random** | Offset random hingga 5 km |
+| Setting | Offset Distance | Est. Points |
+|---------|-----------------|-------------|
+| **Perfect** | 0m (exact location) | 5000 |
+| **Near** | ~500m | 4990-4999 |
+| **Medium** | ~2km | 4950-4990 |
+| **Far** | ~10km | 4500-4800 |
+| **Very Far** | ~50km | 3000-4000 |
+| **Country** | ~200km | Varies |
+| **Random** | 1-100km random | Varies |
 
-> ⚠️ **Tips:** Gunakan "Near" atau "Medium" agar tidak terlihat mencurigakan. Perfect score setiap ronde bisa menarik perhatian!
+> ⚠️ **Tips:** Gunakan "Near", "Medium", atau "Far" agar tidak terlihat mencurigakan. Perfect score setiap ronde bisa menarik perhatian!
 
 ---
 
@@ -175,7 +167,7 @@ Manifest V3 adalah versi terbaru dari sistem Chrome extension yang diperkenalkan
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.8.49",
+  "version": "1.8.50",
   "description": "Auto-detect Street View coordinates",
   "permissions": [
     "sidePanel",
@@ -515,6 +507,17 @@ function extractAndSendCoords(text) {
 
 ## 📝 Changelog
 
+### v1.8.50 📊
+- 📊 **UPDATED ACCURACY SETTINGS!** - Offset lebih realistis!
+  - Near: ~500m (was 100m)
+  - Medium: ~2km (was 500m)
+  - Far: ~10km (was 2km)
+  - Very Far: ~50km (NEW!)
+  - Country: ~200km (NEW!)
+  - Random: 1-100km (was 0-5km)
+- ✅ **Works WITHOUT opening map!** - Langsung place tanpa buka peta dulu!
+- 🔧 Fixed offset calculation untuk accuracy yang lebih konsisten
+
 ### v1.8.49 🤖
 - 🤖 **MULTIPLAYER AUTO-PLACE!** - Auto-detect ronde baru dan auto-place marker!
 - 🔍 3 detection methods: URL change, DOM watch (guess map), API intercept
@@ -527,7 +530,6 @@ function extractAndSendCoords(text) {
 - 🔧 Menggunakan React Fiber method (inspired by Location Resolver)
 - ✨ Tidak perlu panning map - langsung place di koordinat akurat
 - 📊 Multiple accuracy settings: Perfect, Near, Medium, Far, Random
-- ⚠️ **PENTING:** Harus buka peta guess dulu sebelum place!
 
 ### v1.8.32
 - 🔄 **Round Detection v2** - 7 detection methods for all game modes!
