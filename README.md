@@ -107,7 +107,6 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
 
 ### v1.8.18
 - ✅ GeoGuessr round detection FIXED
-- 🔧 XHR intercept approach from PlonkIT
 
 ### v1.8.0
 - ✅ GeoGuessr support added
