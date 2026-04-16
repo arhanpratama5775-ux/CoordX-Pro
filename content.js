@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.13)
+ * CoordX Pro — Content Script (v1.8.14)
  * 
  * Content script is the SOURCE OF TRUTH for round index
  * Filters coordinates based on current round
@@ -8,8 +8,8 @@
 (function () {
   'use strict';
 
-  if (window.__coordxProV113Injected) return;
-  window.__coordxProV113Injected = true;
+  if (window.__coordxProV114Injected) return;
+  window.__coordxProV114Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -17,8 +17,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.13 loaded');
-  logToBackground('Content v1.8.13 loaded');
+  console.log('[CoordX Pro] Content v1.8.14 loaded');
+  logToBackground('Content v1.8.14 loaded');
 
   // Current round index - THIS IS THE SOURCE OF TRUTH
   let currentRoundIndex = 0;
@@ -91,9 +91,11 @@
       // If coordinate has a round index, check if it matches current round
       if (roundIndex !== null && roundIndex !== undefined) {
         if (roundIndex !== currentRoundIndex) {
-          // Skip coordinates from other rounds
+          // Skip coordinates from other rounds - log for debug
+          logToBackground('⏭️ Skip round ' + roundIndex + ' (current: ' + currentRoundIndex + ')');
           return;
         }
+        logToBackground('✓ Round match! ' + roundIndex + ' = ' + currentRoundIndex);
       }
       
       sendCoords(lat, lng, source);
