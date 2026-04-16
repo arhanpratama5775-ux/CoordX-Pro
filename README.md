@@ -75,7 +75,7 @@ Google Maps API (GetMetadata / SingleImageSearch)
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/latest)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.29/CoordX-Pro-v1.8.29.zip)**
 
 Atau download langsung:
 ```
