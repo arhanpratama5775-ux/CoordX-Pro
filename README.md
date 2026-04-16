@@ -115,11 +115,6 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
 ### v1.0.0
 - 🎉 Initial release
 
----
-
-## 🏷️ Keywords
-
-`geoguessr cheat` `geoguessr hack` `geoguessr extension` `geoguessr coordinates` `street view coordinates` `geography game cheat` `chrome extension geoguessr` `auto location geoguessr` `geoguessr location finder` `geoguessr coordinates hack`
 
 ---
 
