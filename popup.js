@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Popup Script (v1.8.23)
+ * CoordX Pro — Popup Script (v1.8.24)
  * Dark Space Theme
  */
 

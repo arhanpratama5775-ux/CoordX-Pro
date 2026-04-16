@@ -1,16 +1,17 @@
 /**
- * CoordX Pro — Main World Script (v1.8.23)
+ * CoordX Pro — Main World Script (v1.8.24)
  * 
- * Dual approach:
- * - GeoGuessr: XHR intercept Google Maps API
- * - WorldGuessr: Parse __NEXT_DATA__ + watch URL for round changes
+ * Aggressive coordinate hunting:
+ * - Log ALL requests to find WorldGuessr API
+ * - Search window object for coordinates
+ * - Multiple detection methods
  */
 
 (function() {
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.23');
+  console.log('[CoordX Pro] Main world v1.8.24');
 
   function sendCoords(lat, lng, source) {
     window.postMessage({
@@ -36,173 +37,114 @@
     return 'unknown';
   }
 
-  // ─── WorldGuessr: Parse __NEXT_DATA__ ─────────────────────────
+  const game = detectGame();
+  let loggedEndpoints = new Set();
 
-  function extractWorldGuessrCoords() {
-    try {
-      const scriptTag = document.getElementById('__NEXT_DATA__');
-      if (!scriptTag) {
-        sendLog('WorldGuessr: No __NEXT_DATA__ found');
-        return null;
-      }
-
-      const data = JSON.parse(scriptTag.textContent);
-      
-      // Log structure for debugging (only once)
-      if (!window.__coordxLoggedStructure) {
-        sendLog('WorldGuessr __NEXT_DATA__ keys: ' + Object.keys(data).join(', '));
-        if (data.props?.pageProps) {
-          sendLog('pageProps keys: ' + Object.keys(data.props.pageProps).join(', '));
-        }
-        window.__coordxLoggedStructure = true;
-      }
-      
-      let lat = null;
-      let lng = null;
-
-      // Try different paths for coordinates
-      const tryPath = (obj, path) => {
-        if (!obj) return null;
-        const keys = path.split('.');
-        let current = obj;
-        for (const key of keys) {
-          if (current && typeof current === 'object' && key in current) {
-            current = current[key];
-          } else {
-            return null;
-          }
-        }
-        return current;
-      };
-
-      // Path 1: game.rounds array (latest round)
-      const rounds = tryPath(data, 'props.pageProps.game.rounds');
-      if (rounds && Array.isArray(rounds) && rounds.length > 0) {
-        // Get last round
-        const round = rounds[rounds.length - 1];
-        lat = round.lat || round.latitude;
-        lng = round.lng || round.longitude || round.lng;
-        if (lat && lng) {
-          sendLog('Found in rounds[' + (rounds.length - 1) + ']');
-        }
-      }
-
-      // Path 2: rounds directly in pageProps
-      if (!lat) {
-        const directRounds = tryPath(data, 'props.pageProps.rounds');
-        if (directRounds && Array.isArray(directRounds) && directRounds.length > 0) {
-          const round = directRounds[directRounds.length - 1];
-          lat = round.lat || round.latitude;
-          lng = round.lng || round.longitude || round.lng;
-          if (lat && lng) {
-            sendLog('Found in pageProps.rounds');
-          }
-        }
-      }
-
-      // Path 3: currentRound
-      if (!lat) {
-        const currentRound = tryPath(data, 'props.pageProps.currentRound');
-        if (currentRound) {
-          lat = currentRound.lat || currentRound.latitude;
-          lng = currentRound.lng || currentRound.longitude || currentRound.lng;
-          if (lat && lng) {
-            sendLog('Found in currentRound');
-          }
-        }
-      }
-
-      // Path 4: location
-      if (!lat) {
-        const location = tryPath(data, 'props.pageProps.location');
-        if (location) {
-          lat = location.lat || location.latitude;
-          lng = location.lng || location.longitude || location.lng;
-          if (lat && lng) {
-            sendLog('Found in location');
-          }
-        }
-      }
-
-      // Path 5: streetView
-      if (!lat) {
-        const sv = tryPath(data, 'props.pageProps.streetView');
-        if (sv) {
-          lat = sv.lat || sv.latitude;
-          lng = sv.lng || sv.longitude || sv.lng;
-          if (lat && lng) {
-            sendLog('Found in streetView');
-          }
-        }
-      }
-
-      // Path 6: state.rounds (for client-side state)
-      if (!lat && data.props?.pageProps?.initialState) {
-        const state = data.props.pageProps.initialState;
-        if (state.rounds && Array.isArray(state.rounds)) {
-          const round = state.rounds[state.rounds.length - 1];
-          lat = round.lat || round.latitude;
-          lng = round.lng || round.longitude || round.lng;
-          if (lat && lng) {
-            sendLog('Found in initialState.rounds');
-          }
-        }
-      }
-
-      // Validate coords
-      if (lat !== null && lng !== null && 
-          !isNaN(lat) && !isNaN(lng) &&
-          lat >= -90 && lat <= 90 &&
-          lng >= -180 && lng <= 180) {
-        return { lat, lng };
-      }
-
-      return null;
-    } catch (e) {
-      sendLog('WorldGuessr parse error: ' + e.message);
-      return null;
-    }
-  }
-
-  // ─── GeoGuessr: XHR Intercept ─────────────────────────────────
+  // ─── INTERCEPT ALL XHR - Log everything for WorldGuessr ─────────────
 
   const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
 
   XMLHttpRequest.prototype.open = function(method, url) {
-    const args = arguments;
+    this._url = url;
+    this._method = method;
+    return originalOpen.apply(this, arguments);
+  };
+
+  XMLHttpRequest.prototype.send = function() {
+    const url = this._url || '';
+    const method = this._method || 'GET';
     
-    if (method.toUpperCase() === 'POST' && 
-        (url.includes('google.internal.maps.mapsjs.v1.MapsJsInternalService/GetMetadata') ||
-         url.includes('google.internal.maps.mapsjs.v1.MapsJsInternalService/SingleImageSearch'))) {
-      
-      this.addEventListener('load', function() {
+    this.addEventListener('load', function() {
+      // GeoGuessr: Google Maps API
+      if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
         try {
           const match = this.responseText.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
           if (match) {
             const lat = parseFloat(match[1]);
             const lng = parseFloat(match[2]);
-            
-            if (!isNaN(lat) && !isNaN(lng) && 
-                lat >= -90 && lat <= 90 && 
-                lng >= -180 && lng <= 180) {
-              sendLog('📍 XHR: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              sendLog('📍 XHR GeoGuessr: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
               sendCoords(lat, lng, 'xhr');
             }
           }
         } catch (e) {}
-      });
-    }
+      }
+      
+      // WorldGuessr: Log ALL requests to find the API
+      if (game === 'worldguessr') {
+        // Log endpoints we haven't seen
+        const endpoint = url.split('?')[0].split('/').slice(-2).join('/');
+        if (!loggedEndpoints.has(endpoint) && !url.includes('chrome-extension')) {
+          loggedEndpoints.add(endpoint);
+          sendLog('🔍 XHR: ' + method + ' ' + endpoint);
+        }
+        
+        // Try to find coordinates in any response
+        try {
+          const text = this.responseText;
+          
+          // Pattern 1: [null,null,lat,lng]
+          let match = text.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
+          if (match) {
+            const lat = parseFloat(match[1]);
+            const lng = parseFloat(match[2]);
+            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              sendLog('📍 Found [null,null,lat,lng] in ' + endpoint);
+              sendCoords(lat, lng, 'xhr');
+            }
+          }
+          
+          // Pattern 2: "lat":123.456,"lng":78.90
+          match = text.match(/"lat"\s*:\s*(-?\d+\.\d+)\s*,\s*"lng"\s*:\s*(-?\d+\.\d+)/);
+          if (match) {
+            const lat = parseFloat(match[1]);
+            const lng = parseFloat(match[2]);
+            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              sendLog('📍 Found "lat","lng" in ' + endpoint);
+              sendCoords(lat, lng, 'xhr');
+            }
+          }
+          
+          // Pattern 3: "latitude":123.456,"longitude":78.90
+          match = text.match(/"latitude"\s*:\s*(-?\d+\.\d+)\s*,\s*"longitude"\s*:\s*(-?\d+\.\d+)/);
+          if (match) {
+            const lat = parseFloat(match[1]);
+            const lng = parseFloat(match[2]);
+            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              sendLog('📍 Found "latitude","longitude" in ' + endpoint);
+              sendCoords(lat, lng, 'xhr');
+            }
+          }
+          
+          // Pattern 4: coordinates array [lat, lng]
+          match = text.match(/"coordinates"\s*:\s*\[\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/);
+          if (match) {
+            const lng = parseFloat(match[1]); // GeoJSON format is [lng, lat]
+            const lat = parseFloat(match[2]);
+            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+              sendLog('📍 Found coordinates[] in ' + endpoint);
+              sendCoords(lat, lng, 'xhr');
+            }
+          }
+          
+        } catch (e) {}
+      }
+    });
     
-    return originalOpen.apply(this, args);
+    return originalSend.apply(this, arguments);
   };
 
-  // Fetch interception
+  // ─── INTERCEPT ALL FETCH ───────────────────────────────────
+
   const originalFetch = window.fetch;
   window.fetch = function(input, init) {
-    const url = typeof input === 'string' ? input : input.url;
+    const url = typeof input === 'string' ? input : (input.url || '');
+    const method = init?.method || 'GET';
     
-    if (url && (url.includes('GetMetadata') || url.includes('SingleImageSearch'))) {
-      return originalFetch.apply(this, arguments).then(response => {
+    return originalFetch.apply(this, arguments).then(response => {
+      // GeoGuessr: Google Maps API
+      if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
         const clonedResponse = response.clone();
         clonedResponse.text().then(text => {
           try {
@@ -210,95 +152,166 @@
             if (match) {
               const lat = parseFloat(match[1]);
               const lng = parseFloat(match[2]);
-              
-              if (!isNaN(lat) && !isNaN(lng) && 
-                  lat >= -90 && lat <= 90 && 
-                  lng >= -180 && lng <= 180) {
-                sendLog('📍 Fetch: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                sendLog('📍 Fetch GeoGuessr: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
                 sendCoords(lat, lng, 'fetch');
               }
             }
           } catch (e) {}
         });
-        return response;
-      });
-    }
-    
-    return originalFetch.apply(this, arguments);
+      }
+      
+      // WorldGuessr: Log and search ALL responses
+      if (game === 'worldguessr') {
+        const endpoint = url.split('?')[0].split('/').slice(-2).join('/');
+        if (!loggedEndpoints.has(endpoint) && !url.includes('chrome-extension')) {
+          loggedEndpoints.add(endpoint);
+          sendLog('🔍 Fetch: ' + method + ' ' + endpoint);
+        }
+        
+        const clonedResponse = response.clone();
+        clonedResponse.text().then(text => {
+          try {
+            // Try all patterns
+            let match = text.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
+            if (match) {
+              const lat = parseFloat(match[1]);
+              const lng = parseFloat(match[2]);
+              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                sendLog('📍 Fetch found coords in ' + endpoint);
+                sendCoords(lat, lng, 'fetch');
+              }
+            }
+            
+            match = text.match(/"lat"\s*:\s*(-?\d+\.\d+)\s*,\s*"lng"\s*:\s*(-?\d+\.\d+)/);
+            if (match) {
+              const lat = parseFloat(match[1]);
+              const lng = parseFloat(match[2]);
+              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                sendLog('📍 Fetch found lat/lng in ' + endpoint);
+                sendCoords(lat, lng, 'fetch');
+              }
+            }
+            
+            match = text.match(/"latitude"\s*:\s*(-?\d+\.\d+)\s*,\s*"longitude"\s*:\s*(-?\d+\.\d+)/);
+            if (match) {
+              const lat = parseFloat(match[1]);
+              const lng = parseFloat(match[2]);
+              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                sendLog('📍 Fetch found lat/lng in ' + endpoint);
+                sendCoords(lat, lng, 'fetch');
+              }
+            }
+          } catch (e) {}
+        });
+      }
+      
+      return response;
+    });
   };
 
-  // ─── WorldGuessr: Poll + URL Watch ─────────────────────────
+  // ─── SEARCH WINDOW OBJECT FOR COORDINATES ──────────────────
 
-  let lastWorldGuessrCoords = null;
-  let lastWorldGuessrUrl = null;
-
-  function checkWorldGuessr() {
-    const game = detectGame();
+  function searchWindowObject() {
     if (game !== 'worldguessr') return;
-
-    const currentUrl = window.location.href;
     
-    // Check if URL changed (new round)
-    if (lastWorldGuessrUrl && lastWorldGuessrUrl !== currentUrl) {
-      sendLog('WorldGuessr URL changed, resetting');
-      lastWorldGuessrCoords = null;
+    sendLog('🔍 Searching window object...');
+    
+    // Common property names to check
+    const checkProps = [
+      '__NEXT_DATA__',
+      '__NUXT__',
+      '__INITIAL_STATE__',
+      '__STATE__',
+      'INITIAL_DATA',
+      'window.__data',
+      '__PRELOADED_STATE__'
+    ];
+    
+    for (const prop of checkProps) {
+      try {
+        const val = window[prop];
+        if (val) {
+          sendLog('🔍 Found window.' + prop);
+        }
+      } catch (e) {}
     }
-    lastWorldGuessrUrl = currentUrl;
-
-    const coords = extractWorldGuessrCoords();
-    if (coords) {
-      const coordString = coords.lat.toFixed(6) + ',' + coords.lng.toFixed(6);
+    
+    // Search for objects with lat/lng
+    function findCoordsInObject(obj, path = '', depth = 0) {
+      if (depth > 4 || !obj || typeof obj !== 'object') return;
       
-      // Send if different from last
-      if (coordString !== lastWorldGuessrCoords) {
-        lastWorldGuessrCoords = coordString;
-        sendLog('📍 WorldGuessr: ' + coords.lat.toFixed(4) + ', ' + coords.lng.toFixed(4));
-        sendCoords(coords.lat, coords.lng, 'nextdata');
-      }
+      try {
+        // Check this object
+        if (typeof obj.lat === 'number' && typeof obj.lng === 'number') {
+          if (obj.lat >= -90 && obj.lat <= 90 && obj.lng >= -180 && obj.lng <= 180) {
+            sendLog('📍 Found at window.' + path);
+            sendCoords(obj.lat, obj.lng, 'window');
+            return;
+          }
+        }
+        
+        // Search children
+        for (const key in obj) {
+          if (key.startsWith('_') || key === 'window') continue;
+          findCoordsInObject(obj[key], path ? path + '.' + key : key, depth + 1);
+        }
+      } catch (e) {}
+    }
+    
+    // Check Next.js internal
+    if (window.__NEXT_DATA__) {
+      sendLog('🔍 __NEXT_DATA__ type: ' + typeof window.__NEXT_DATA__);
+      findCoordsInObject(window.__NEXT_DATA__, '__NEXT_DATA__');
+    }
+    
+    // Check React Fiber
+    const root = document.getElementById('__next');
+    if (root && root._reactRootContainer) {
+      sendLog('🔍 Found React root');
     }
   }
 
-  // Poll WorldGuessr
-  setInterval(checkWorldGuessr, 500);
+  // Run search after page loads
+  setTimeout(searchWindowObject, 1000);
+  setTimeout(searchWindowObject, 3000);
+
+  // ─── POLL FOR WINDOW OBJECT CHANGES ─────────────────────────
+
+  let lastWindowCoords = null;
   
-  // Initial checks
-  setTimeout(checkWorldGuessr, 100);
-  setTimeout(checkWorldGuessr, 1000);
-  setTimeout(checkWorldGuessr, 3000);
+  setInterval(() => {
+    if (game !== 'worldguessr') return;
+    
+    // Try __NEXT_DATA__ again
+    try {
+      const nextData = window.__NEXT_DATA__;
+      if (nextData?.props?.pageProps) {
+        const pp = nextData.props.pageProps;
+        
+        // Check various paths
+        const paths = [
+          pp.rounds?.[pp.rounds.length - 1],
+          pp.game?.rounds?.[pp.game.rounds.length - 1],
+          pp.currentRound,
+          pp.location,
+          pp.streetView
+        ];
+        
+        for (const p of paths) {
+          if (p && typeof p.lat === 'number' && typeof p.lng === 'number') {
+            const coordStr = p.lat.toFixed(4) + ',' + p.lng.toFixed(4);
+            if (coordStr !== lastWindowCoords) {
+              lastWindowCoords = coordStr;
+              sendLog('📍 __NEXT_DATA__ poll: ' + coordStr);
+              sendCoords(p.lat, p.lng, 'poll');
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }, 1000);
 
-  // ─── Watch for DOM changes ───────────────────────────────────
-
-  const observer = new MutationObserver(() => {
-    if (detectGame() === 'worldguessr') {
-      checkWorldGuessr();
-    }
-  });
-
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true
-  });
-
-  // ─── Also try window.history for SPA navigation ───────────────
-
-  const originalPushState = history.pushState;
-  history.pushState = function() {
-    originalPushState.apply(this, arguments);
-    if (detectGame() === 'worldguessr') {
-      sendLog('History pushState detected');
-      lastWorldGuessrCoords = null;
-      setTimeout(checkWorldGuessr, 100);
-    }
-  };
-
-  window.addEventListener('popstate', () => {
-    if (detectGame() === 'worldguessr') {
-      sendLog('Popstate detected');
-      lastWorldGuessrCoords = null;
-      setTimeout(checkWorldGuessr, 100);
-    }
-  });
-
-  sendLog('Main world v1.8.23 ready');
+  sendLog('Main world v1.8.24 ready - Aggressive mode for ' + game);
 
 })();

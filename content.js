@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.23)
+ * CoordX Pro — Content Script (v1.8.24)
  * 
  * Handle coords from main world
  * Different handling per game
@@ -8,8 +8,8 @@
 (function () {
   'use strict';
 
-  if (window.__coordxProV123Injected) return;
-  window.__coordxProV123Injected = true;
+  if (window.__coordxProV124Injected) return;
+  window.__coordxProV124Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -17,8 +17,8 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.23 loaded');
-  logToBackground('Content v1.8.23 loaded');
+  console.log('[CoordX Pro] Content v1.8.24 loaded');
+  logToBackground('Content v1.8.24 loaded');
 
   // Current game
   let currentGame = null;

@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.23)
+ * CoordX Pro — Side Panel Script (v1.8.24)
  * 
  * Dark Space Theme - Auto-detect enabled
  */
@@ -44,7 +44,7 @@
     console.log('[CoordX Pro Sidepanel]', msg);
   }
 
-  log('Side panel v1.8.23 loaded');
+  log('Side panel v1.8.24 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
