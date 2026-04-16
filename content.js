@@ -1,15 +1,14 @@
 /**
  * CoordX Pro — Content Script (v1.8.26)
  * 
- * Handle coords from main world
- * Different handling per game
+ * GeoGuessr only - handle coords from main world
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV124Injected) return;
-  window.__coordxProV124Injected = true;
+  if (window.__coordxProInjected) return;
+  window.__coordxProInjected = true;
 
   function logToBackground(msg) {
     try {
@@ -20,23 +19,11 @@
   console.log('[CoordX Pro] Content v1.8.26 loaded');
   logToBackground('Content v1.8.26 loaded');
 
-  // Current game
-  let currentGame = null;
-  
-  function detectGame() {
-    const host = window.location.hostname;
-    if (host.includes('geoguessr')) return 'geoguessr';
-    if (host.includes('worldguessr')) return 'worldguessr';
-    if (host.includes('openguessr')) return 'openguessr';
-    return 'unknown';
-  }
-
   // Coords tracking
   let lastSentLat = null;
   let lastSentLng = null;
-  let lastSentGame = null;
   
-  // Blocking (for GeoGuessr only)
+  // Blocking after NEXT
   let blockedLat = null;
   let blockedLng = null;
   let blockedCount = 0;
@@ -53,51 +40,25 @@
   function resetAll() {
     lastSentLat = null;
     lastSentLng = null;
-    lastSentGame = null;
     blockedLat = null;
     blockedLng = null;
     blockedCount = 0;
-    logToBackground('🔄 Full reset');
+    logToBackground('🔄 Reset');
   }
 
   function sendCoords(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return false;
-    
-    const game = detectGame();
 
-    // Reset if game changed
-    if (lastSentGame !== null && lastSentGame !== game) {
-      logToBackground('🎮 Game changed: ' + lastSentGame + ' → ' + game);
-      resetAll();
-    }
-    
-    lastSentGame = game;
-
-    // BLOCKING LOGIC - Different per game
-    
-    // GeoGuessr: Block old coords after NEXT
-    if (game === 'geoguessr') {
-      if (blockedLat !== null && blockedLng !== null) {
-        if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
-          blockedCount++;
-          logToBackground('🚫 Blocked old GeoGuessr coords (x' + blockedCount + ')');
-          return false;
-        }
-      }
-    }
-    
-    // WorldGuessr: Just skip duplicates, no blocking
-    // This is because __NEXT_DATA__ might stay the same
-    if (game === 'worldguessr') {
-      if (lastSentLat !== null && lastSentLng !== null) {
-        if (Math.abs(lastSentLat - lat) < 0.01 && Math.abs(lastSentLng - lng) < 0.01) {
-          // Same coords, skip
-          return false;
-        }
+    // Block old coords after NEXT
+    if (blockedLat !== null && blockedLng !== null) {
+      if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
+        blockedCount++;
+        logToBackground('🚫 Blocked old coords (x' + blockedCount + ')');
+        return false;
       }
     }
 
-    // Skip if exactly same as last sent
+    // Skip if same as last sent
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -107,14 +68,14 @@
     lastSentLat = lat;
     lastSentLng = lng;
 
-    logToBackground('✅ SENT [' + game + ']: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    logToBackground('✅ SENT: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
         lat: lat,
         lng: lng,
-        source: source + '_' + game
+        source: source
       });
       return true;
     } catch (e) {
@@ -155,8 +116,7 @@
 
   // Init
   function init() {
-    currentGame = detectGame();
-    logToBackground('🎮 Detected game: ' + currentGame);
+    logToBackground('🎮 GeoGuessr mode');
     requestMainWorldInjection();
   }
 
@@ -169,16 +129,11 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Handle NEXT - block old coords for GeoGuessr only
+  // Handle NEXT - block old coords
   document.addEventListener('click', (e) => {
-    const game = detectGame();
-    
-    // Only for GeoGuessr
-    if (game !== 'geoguessr') return;
-    
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
-      logToBackground('NEXT clicked on GeoGuessr');
+      logToBackground('NEXT clicked');
       
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
@@ -190,25 +145,5 @@
       lastSentLng = null;
     }
   }, true);
-
-  // Watch for URL changes
-  let lastUrl = window.location.href;
-  
-  function checkUrlChange() {
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      logToBackground('🔗 URL changed');
-      
-      const oldGame = currentGame;
-      currentGame = detectGame();
-      
-      if (oldGame !== currentGame) {
-        logToBackground('🎮 Game navigation: ' + oldGame + ' → ' + currentGame);
-        resetAll();
-      }
-    }
-  }
-  
-  setInterval(checkUrlChange, 1000);
 
 })();
