@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.8.17)
+ * CoordX Pro — Content Script (v1.8.18)
  * 
- * Simple approach: accept NEW coords, block OLD coords after NEXT
+ * Simple: accept new coords, block old coords after NEXT
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV117Injected) return;
-  window.__coordxProV117Injected = true;
+  if (window.__coordxProV118Injected) return;
+  window.__coordxProV118Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,14 +16,14 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.17 loaded');
-  logToBackground('Content v1.8.17 loaded');
+  console.log('[CoordX Pro] Content v1.8.18 loaded');
+  logToBackground('Content v1.8.18 loaded');
 
   // Last sent coordinates
   let lastSentLat = null;
   let lastSentLng = null;
   
-  // Block exact coords after NEXT
+  // Block old coords after NEXT
   let blockedLat = null;
   let blockedLng = null;
   let blockUntil = 0;
@@ -42,7 +42,7 @@
 
     const now = Date.now();
 
-    // Block EXACT coords after NEXT click
+    // Block old coords after NEXT
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
         logToBackground('🚫 Blocked old coords');
@@ -50,7 +50,7 @@
       }
     }
 
-    // Skip if same as last sent (prevents spam)
+    // Skip if same as last sent
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -60,7 +60,7 @@
     lastSentLat = lat;
     lastSentLng = lng;
 
-    logToBackground('✅ NEW: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    logToBackground('✅ SENT: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     try {
       chrome.runtime.sendMessage({
@@ -83,7 +83,7 @@
     if (!data) return;
 
     if (data.type === 'COORDX_COORDS') {
-      const { lat, lng, source, roundIndex } = data;
+      const { lat, lng, source } = data;
       sendCoords(lat, lng, source);
     }
     
@@ -124,7 +124,7 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Handle NEXT button click - block OLD coords
+  // Handle NEXT - block old coords
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
@@ -133,11 +133,10 @@
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 15000; // 15 seconds block
-        logToBackground('🚫 Block: ' + blockedLat.toFixed(4) + ' for 15s');
+        blockUntil = Date.now() + 20000; // 20 seconds
+        logToBackground('🚫 Block: ' + blockedLat.toFixed(4) + ' for 20s');
       }
       
-      // Reset to allow new coords
       lastSentLat = null;
       lastSentLng = null;
     }
