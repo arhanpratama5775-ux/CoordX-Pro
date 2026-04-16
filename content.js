@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.8.15)
+ * CoordX Pro — Content Script (v1.8.16)
  * 
- * Auto-sync round index from incoming coordinates
+ * Fix continuous update issue and better round sync
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV115Injected) return;
-  window.__coordxProV115Injected = true;
+  if (window.__coordxProV116Injected) return;
+  window.__coordxProV116Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,18 +16,24 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.15 loaded');
-  logToBackground('Content v1.8.15 loaded');
+  console.log('[CoordX Pro] Content v1.8.16 loaded');
+  logToBackground('Content v1.8.16 loaded');
 
-  // Current round index
+  // Current round index (0-based)
   let currentRoundIndex = 0;
   
-  // Track incoming rounds to auto-sync
-  let incomingRoundCounts = {};
+  // Track which round we last synced to (prevent repeated syncs)
+  let lastSyncedRound = -1;
   
-  // Last sent coordinates
+  // Last sent coordinates - PERSIST across checks
   let lastSentLat = null;
   let lastSentLng = null;
+  
+  // Count of same coords received (for auto-sync)
+  let coordReceiveCount = 0;
+  let lastReceivedLat = null;
+  let lastReceivedLng = null;
+  let lastReceivedRound = null;
   
   // Block exact coords after NEXT
   let blockedLat = null;
@@ -55,7 +61,7 @@
       }
     }
 
-    // Skip if same as last sent
+    // Skip if same as last sent - IMPORTANT: this prevents continuous updates
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -90,24 +96,35 @@
     if (data.type === 'COORDX_COORDS') {
       const { lat, lng, source, roundIndex } = data;
       
-      // If coordinate has a round index
+      // Track what we're receiving
       if (roundIndex !== null && roundIndex !== undefined) {
-        // Count incoming rounds
-        incomingRoundCounts[roundIndex] = (incomingRoundCounts[roundIndex] || 0) + 1;
+        // Check if this is same coords as before
+        const isSameCoords = lastReceivedLat !== null && 
+          Math.abs(lastReceivedLat - lat) < 0.0001 && 
+          Math.abs(lastReceivedLng - lng) < 0.0001 &&
+          lastReceivedRound === roundIndex;
         
-        // Auto-sync: if we receive 3+ coords from same round, assume that's current
-        if (incomingRoundCounts[roundIndex] >= 3 && roundIndex !== currentRoundIndex) {
-          logToBackground('🔄 Auto-sync round: ' + currentRoundIndex + ' → ' + roundIndex);
-          currentRoundIndex = roundIndex;
-          lastSentLat = null;  // Reset to allow new coords
-          lastSentLng = null;
-          incomingRoundCounts = {};  // Reset counts
+        if (isSameCoords) {
+          coordReceiveCount++;
+          
+          // Auto-sync after receiving same coords 5+ times
+          if (coordReceiveCount >= 5 && roundIndex !== lastSyncedRound) {
+            logToBackground('🔄 Auto-sync: r' + currentRoundIndex + ' → r' + roundIndex);
+            currentRoundIndex = roundIndex;
+            lastSyncedRound = roundIndex;
+            // DON'T reset lastSentLat/lng - prevents continuous updates
+          }
+        } else {
+          // Different coords, reset counter
+          coordReceiveCount = 1;
+          lastReceivedLat = lat;
+          lastReceivedLng = lng;
+          lastReceivedRound = roundIndex;
         }
         
+        // Filter by round
         if (roundIndex !== currentRoundIndex) {
-          // Skip coordinates from other rounds
-          logToBackground('⏭️ Skip r' + roundIndex + ' (current: r' + currentRoundIndex + ')');
-          return;
+          return; // Silently skip
         }
       }
       
@@ -133,7 +150,8 @@
       blockedLng = null;
       blockUntil = 0;
       currentRoundIndex = 0;
-      incomingRoundCounts = {};
+      lastSyncedRound = -1;
+      coordReceiveCount = 0;
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -160,49 +178,21 @@
       logToBackground('NEXT clicked');
       
       currentRoundIndex++;
+      lastSyncedRound = currentRoundIndex;
       logToBackground('📍 Round: ' + currentRoundIndex);
       
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
         blockUntil = Date.now() + 10000;
-        logToBackground('Block exact: ' + blockedLat.toFixed(4));
+        logToBackground('Block: ' + blockedLat.toFixed(4));
       }
       
+      // Reset for new round
       lastSentLat = null;
       lastSentLng = null;
-      incomingRoundCounts = {};
+      coordReceiveCount = 0;
     }
   }, true);
-
-  // UI detection as backup
-  setInterval(() => {
-    // Look for round indicator in various formats
-    const body = document.body.innerText;
-    
-    // Pattern: "Round 3", "3 / 5", "Round 3 of 5"
-    const patterns = [
-      /round\s*(\d+)/i,
-      /(\d+)\s*\/\s*\d+\s*$/
-    ];
-    
-    for (const pattern of patterns) {
-      const matches = body.match(pattern);
-      if (matches) {
-        const roundNum = parseInt(matches[1]);
-        if (roundNum > 0 && roundNum < 100) {
-          const detectedIndex = roundNum - 1;
-          if (detectedIndex !== currentRoundIndex) {
-            currentRoundIndex = detectedIndex;
-            logToBackground('📍 UI round: ' + currentRoundIndex);
-            lastSentLat = null;
-            lastSentLng = null;
-            incomingRoundCounts = {};
-          }
-          break;
-        }
-      }
-    }
-  }, 2000);
 
 })();

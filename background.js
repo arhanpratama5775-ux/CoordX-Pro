@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.15)
+ * CoordX Pro — Background Service Worker (v1.8.16)
  */
 
 const LOG_KEY = 'coordx_logs';
@@ -30,7 +30,7 @@ function log(msg) {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.15');
+  log('Extension installed v1.8.16');
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -108,4 +108,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.8.15 ready');
+log('Background v1.8.16 ready');
