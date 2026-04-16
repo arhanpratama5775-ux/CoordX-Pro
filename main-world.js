@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.18)
+ * CoordX Pro — Main World Script (v1.8.19)
  * 
  * Intercept Google Maps API calls for accurate coordinates
  * Based on PlonkIT approach - more reliable than __NEXT_DATA__
@@ -9,7 +9,7 @@
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.18');
+  console.log('[CoordX Pro] Main world v1.8.19');
 
   function sendCoords(lat, lng, source) {
     window.postMessage({
@@ -95,6 +95,6 @@
     return originalFetch.apply(this, arguments);
   };
 
-  sendLog('Main world v1.8.18 ready - XHR intercept active');
+  sendLog('Main world v1.8.19 ready - XHR intercept active');
 
 })();

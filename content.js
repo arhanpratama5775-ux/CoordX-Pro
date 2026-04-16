@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.8.18)
+ * CoordX Pro — Content Script (v1.8.19)
  * 
- * Simple: accept new coords, block old coords after NEXT
+ * Block old coords forever, accept new coords
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV118Injected) return;
-  window.__coordxProV118Injected = true;
+  if (window.__coordxProV119Injected) return;
+  window.__coordxProV119Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,17 +16,17 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.18 loaded');
-  logToBackground('Content v1.8.18 loaded');
+  console.log('[CoordX Pro] Content v1.8.19 loaded');
+  logToBackground('Content v1.8.19 loaded');
 
   // Last sent coordinates
   let lastSentLat = null;
   let lastSentLng = null;
   
-  // Block old coords after NEXT
+  // Blocked coords - FOREVER (until page reload)
   let blockedLat = null;
   let blockedLng = null;
-  let blockUntil = 0;
+  let blockedCount = 0; // Track how many coords we've blocked
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -40,12 +40,11 @@
   function sendCoords(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return false;
 
-    const now = Date.now();
-
-    // Block old coords after NEXT
-    if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
+    // Block old coords FOREVER
+    if (blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
-        logToBackground('🚫 Blocked old coords');
+        blockedCount++;
+        logToBackground('🚫 Blocked old coords (x' + blockedCount + ')');
         return false;
       }
     }
@@ -104,7 +103,7 @@
       lastSentLng = null;
       blockedLat = null;
       blockedLng = null;
-      blockUntil = 0;
+      blockedCount = 0;
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -124,7 +123,7 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Handle NEXT - block old coords
+  // Handle NEXT - block old coords FOREVER
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
@@ -133,8 +132,7 @@
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 20000; // 20 seconds
-        logToBackground('🚫 Block: ' + blockedLat.toFixed(4) + ' for 20s');
+        logToBackground('🚫 Block forever: ' + blockedLat.toFixed(4));
       }
       
       lastSentLat = null;
