@@ -1,8 +1,10 @@
 /**
- * CoordX Pro — Content Script (v1.8.31)
- * 
+ * CoordX Pro — Content Script (v1.8.32)
+ *
  * GeoGuessr only - handle coords from main world
  * Support: Single Player, Challenge, Multiplayer/Duels
+ *
+ * Round Detection v2 - Support all game modes
  */
 
 (function () {
@@ -14,7 +16,7 @@
   // Coords tracking
   let lastSentLat = null;
   let lastSentLng = null;
-  
+
   // Blocking after round change
   let blockedLat = null;
   let blockedLng = null;
@@ -23,6 +25,11 @@
   // Round tracking
   let lastUrl = window.location.href;
   let lastRoundNumber = null;
+  let lastHash = window.location.hash;
+
+  // Cooldown to prevent multiple triggers
+  let lastRoundChangeTime = 0;
+  const ROUND_CHANGE_COOLDOWN = 2000; // 2 seconds
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -42,6 +49,14 @@
   }
 
   function onNewRound(reason) {
+    const now = Date.now();
+
+    // Cooldown check - prevent multiple triggers
+    if (now - lastRoundChangeTime < ROUND_CHANGE_COOLDOWN) {
+      return;
+    }
+    lastRoundChangeTime = now;
+
     // Block old coords
     if (lastSentLat !== null && lastSentLng !== null) {
       blockedLat = lastSentLat;
@@ -49,6 +64,9 @@
     }
     lastSentLat = null;
     lastSentLng = null;
+
+    // Log for debugging (can be removed in production)
+    console.log('[CoordX] New round detected:', reason);
   }
 
   function sendCoords(lat, lng, source) {
@@ -88,7 +106,7 @@
   // Listen for messages from main world
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
-    
+
     const data = event.data;
     if (!data) return;
 
@@ -127,115 +145,286 @@
   setTimeout(init, 2000);
 
   // =====================================================
-  // ROUND DETECTION - Support multiple modes
+  // ROUND DETECTION v2 - Support all game modes
   // =====================================================
 
   // Method 1: Button-based (Challenge / Single Player)
+  // Works for: Single player, Challenge mode
   document.addEventListener('click', (e) => {
-    const text = (e.target?.innerText || '').toUpperCase();
-    const parentText = (e.target?.parentElement?.innerText || '').toUpperCase();
-    
-    if (text.includes('NEXT') || text.includes('PLAY') || 
-        parentText.includes('NEXT') || parentText.includes('PLAY') ||
-        text.includes('CONTINUE') || parentText.includes('CONTINUE')) {
+    const target = e.target;
+    const text = (target?.innerText || '').toUpperCase().trim();
+    const parentText = (target?.parentElement?.innerText || '').toUpperCase().trim();
+    const ariaLabel = (target?.getAttribute('aria-label') || '').toUpperCase();
+
+    // Next round buttons
+    const nextPatterns = ['NEXT', 'PLAY AGAIN', 'CONTINUE', 'START', 'RETRY'];
+    const isNextButton = nextPatterns.some(p =>
+      text === p ||
+      text.includes(p + ' ') ||
+      text.startsWith(p) ||
+      parentText.includes(p) ||
+      ariaLabel.includes(p)
+    );
+
+    if (isNextButton) {
       onNewRound('button');
     }
   }, true);
 
-  // Method 2: URL-based (Multiplayer / Duels / Battle Royale)
-  // URL changes when round changes in most modes
-  const urlObserver = new MutationObserver(() => {
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      // Small delay to let the new round load
-      setTimeout(() => onNewRound('url'), 100);
+  // Method 2: URL & Hash change detection
+  // Works for: Most game modes when URL changes between rounds
+  function checkUrlChange() {
+    const currentUrl = window.location.href;
+    const currentHash = window.location.hash;
+
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
+      onNewRound('url-change');
     }
-  });
+
+    // Hash changes often indicate round changes in GeoGuessr
+    if (currentHash !== lastHash && currentHash !== '') {
+      lastHash = currentHash;
+      onNewRound('hash-change');
+    }
+  }
+
+  // Use MutationObserver for URL detection (SPA navigation)
+  const urlObserver = new MutationObserver(checkUrlChange);
   urlObserver.observe(document.body, { subtree: true, childList: true });
 
-  // Method 3: Round indicator detection (for Duels/Battle Royale)
-  // Watch for round number changes in UI
-  function detectRoundChange() {
-    // Try to find round indicator
-    const roundIndicators = [
-      document.querySelector('[class*="round-indicator"]'),
-      document.querySelector('[class*="roundIndicator"]'),
-      document.querySelector('[class*="game-round"]'),
-      document.querySelector('[data-qa="round-number"]'),
-      document.querySelector('.round-number'),
-    ].filter(Boolean);
+  // Also poll for hash changes (sometimes MutationObserver misses hash)
+  setInterval(checkUrlChange, 500);
 
-    for (const indicator of roundIndicators) {
-      const text = indicator.innerText || indicator.textContent;
-      const match = text.match(/(\d+)/);
+  // Method 3: Round indicator detection
+  // Works for: Games that show "Round 1/5" or similar
+  function detectRoundIndicator() {
+    // GeoGuessr specific selectors
+    const selectors = [
+      '[class*="round-indicator"]',
+      '[class*="roundIndicator"]',
+      '[class*="game-round"]',
+      '[data-qa="round-number"]',
+      '[data-qa="round-indicator"]',
+      '.round-number',
+      '.round-indicator',
+      // GeoGuessr specific class patterns
+      '[class*="RoundIndicator"]',
+      '[class*="GameRound"]'
+    ];
+
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+
+      const text = el.innerText || el.textContent || '';
+      // Match "Round 1", "1/5", "1 of 5", etc.
+      const match = text.match(/(\d+)\s*(?:\/|of|out\s*of)/i);
       if (match) {
         const roundNum = parseInt(match[1]);
         if (lastRoundNumber !== null && roundNum !== lastRoundNumber) {
-          onNewRound('indicator');
+          onNewRound('round-indicator');
         }
         lastRoundNumber = roundNum;
-        break;
-      }
-    }
-  }
-
-  // Check for round changes periodically
-  setInterval(detectRoundChange, 1000);
-
-  // Method 4: Countdown detection (3...2...1...0 pattern)
-  // Detect countdown that appears between rounds
-  let lastCountdownValue = null;
-  let countdownDetected = false;
-  
-  function detectCountdown() {
-    // Look for countdown elements
-    const countdownElements = [
-      document.querySelector('[class*="countdown"]'),
-      document.querySelector('[class*="count-down"]'),
-      document.querySelector('[data-qa="countdown"]'),
-      document.querySelector('[class*="intermission"]'),
-      document.querySelector('[class*="between-round"]'),
-      ...Array.from(document.querySelectorAll('div')).filter(el => {
-        const text = el.innerText?.trim();
-        // Look for standalone numbers 3, 2, 1, 0
-        return text && /^[0-3]$/.test(text) && 
-               el.offsetWidth > 20 && el.offsetHeight > 20; // Must be visible
-      })
-    ].filter(Boolean);
-
-    for (const el of countdownElements) {
-      const text = el.innerText?.trim();
-      const num = parseInt(text);
-      
-      if (!isNaN(num) && num >= 0 && num <= 3) {
-        // Countdown detected
-        if (lastCountdownValue !== null) {
-          // If countdown went 3->2->1->0 or similar decreasing pattern
-          if (num < lastCountdownValue) {
-            countdownDetected = true;
-          }
-          // When countdown reaches 0 or disappears, new round starts
-          if (countdownDetected && (num === 0 || num < lastCountdownValue)) {
-            if (num === 0) {
-              // Wait a bit after countdown ends for new round to load
-              setTimeout(() => onNewRound('countdown'), 500);
-              countdownDetected = false;
-            }
-          }
-        }
-        lastCountdownValue = num;
         return;
       }
     }
-    
-    // If countdown element disappeared after being detected
-    if (countdownDetected && countdownElements.length === 0) {
-      setTimeout(() => onNewRound('countdown-disappear'), 300);
-      countdownDetected = false;
-      lastCountdownValue = null;
+  }
+
+  setInterval(detectRoundIndicator, 1000);
+
+  // Method 4: Timer countdown detection
+  // Works for: Multiplayer, Duels, Battle Royale with time limits
+  let lastTimerValue = null;
+  let timerReachedZero = false;
+
+  function detectTimerCountdown() {
+    // Find timer elements (GeoGuessr specific)
+    const timerSelectors = [
+      '[class*="timer"]',
+      '[class*="Timer"]',
+      '[class*="countdown"]',
+      '[class*="Countdown"]',
+      '[data-qa="timer"]',
+      '[data-qa="countdown"]',
+      '[class*="time-remaining"]',
+      '[class*="timeLeft"]'
+    ];
+
+    for (const selector of timerSelectors) {
+      const elements = document.querySelectorAll(selector);
+
+      for (const el of elements) {
+        // Skip hidden elements
+        if (el.offsetParent === null) continue;
+
+        const text = el.innerText?.trim() || '';
+
+        // Match time formats: "0:30", "1:00", "30s", "25", etc.
+        const timeMatch = text.match(/(?:(\d+):)?(\d+)/);
+        if (timeMatch) {
+          const minutes = parseInt(timeMatch[1]) || 0;
+          const seconds = parseInt(timeMatch[2]) || 0;
+          const totalSeconds = minutes * 60 + seconds;
+
+          // Only process reasonable timer values (0-300 seconds)
+          if (totalSeconds <= 300 && totalSeconds >= 0) {
+            // Detect when timer reaches zero
+            if (totalSeconds === 0 && lastTimerValue !== null && lastTimerValue > 0) {
+              timerReachedZero = true;
+              // Round ends when timer hits 0
+              setTimeout(() => onNewRound('timer-zero'), 800);
+            }
+
+            // Detect significant timer jump (new round started with fresh timer)
+            if (lastTimerValue !== null) {
+              const jump = totalSeconds - lastTimerValue;
+              // If timer jumped up by more than 10 seconds, probably new round
+              if (jump > 10 && lastTimerValue < 30) {
+                onNewRound('timer-reset');
+              }
+            }
+
+            lastTimerValue = totalSeconds;
+            return;
+          }
+        }
+      }
+    }
+
+    // Reset if no timer found
+    lastTimerValue = null;
+  }
+
+  setInterval(detectTimerCountdown, 300);
+
+  // Method 5: Score/Result screen detection
+  // Works for: All modes when score screen appears between rounds
+  let scoreScreenDetected = false;
+
+  function detectScoreScreen() {
+    // Detect score/result screens
+    const scorePatterns = [
+      '[class*="score-board"]',
+      '[class*="ScoreBoard"]',
+      '[class*="result-screen"]',
+      '[class*="ResultScreen"]',
+      '[class*="round-result"]',
+      '[class*="RoundResult"]',
+      '[data-qa="score"]',
+      '[data-qa="result"]',
+      '[class*="intermission"]',
+      '[class*="Intermission"]'
+    ];
+
+    let found = false;
+    for (const selector of scorePatterns) {
+      const el = document.querySelector(selector);
+      if (el && el.offsetParent !== null) {
+        found = true;
+
+        // First time detecting score screen = round ended
+        if (!scoreScreenDetected) {
+          scoreScreenDetected = true;
+          onNewRound('score-screen');
+        }
+        break;
+      }
+    }
+
+    // Reset when score screen disappears (new round starting)
+    if (!found && scoreScreenDetected) {
+      scoreScreenDetected = false;
     }
   }
 
-  setInterval(detectCountdown, 300);
+  setInterval(detectScoreScreen, 500);
+
+  // Method 6: Intermission/Between-round detection
+  // Works for: Duels, Battle Royale with intermission screens
+  let intermissionDetected = false;
+
+  function detectIntermission() {
+    // Look for "Next round in X" or similar text
+    const allText = document.body?.innerText || '';
+    const intermissionPatterns = [
+      /next\s*round\s*in/i,
+      /round\s*\d+\s*starts/i,
+      /get\s*ready/i,
+      /starting\s*soon/i,
+      /waiting\s*for/i
+    ];
+
+    const hasIntermission = intermissionPatterns.some(p => p.test(allText));
+
+    if (hasIntermission && !intermissionDetected) {
+      intermissionDetected = true;
+      onNewRound('intermission');
+    } else if (!hasIntermission) {
+      intermissionDetected = false;
+    }
+  }
+
+  setInterval(detectIntermission, 1000);
+
+  // Method 7: 3-2-1 Go! countdown detection
+  // Works for: Some game modes with countdown before round starts
+  let countdownDetected = false;
+  let lastCountdownValue = null;
+
+  function detectCountdown() {
+    // Look for large centered countdown numbers
+    const countdownElements = Array.from(document.querySelectorAll('div, span')).filter(el => {
+      if (el.offsetParent === null) return false;
+      const text = el.innerText?.trim();
+      if (!text) return false;
+
+      // Match single digit 0-5 or "GO!"
+      if (/^[0-5]$/.test(text) || text.toUpperCase() === 'GO!') {
+        // Must be reasonably large (countdown is usually prominent)
+        const rect = el.getBoundingClientRect();
+        return rect.width > 30 && rect.height > 30;
+      }
+      return false;
+    });
+
+    if (countdownElements.length > 0) {
+      const el = countdownElements[0];
+      const text = el.innerText?.trim().toUpperCase();
+
+      if (text === 'GO!') {
+        // GO! means round just started
+        if (countdownDetected) {
+          onNewRound('countdown-go');
+          countdownDetected = false;
+        }
+        lastCountdownValue = null;
+        return;
+      }
+
+      const num = parseInt(text);
+      if (!isNaN(num)) {
+        if (lastCountdownValue !== null && num < lastCountdownValue) {
+          countdownDetected = true;
+        }
+
+        // When countdown reaches 0 or 1, new round is starting
+        if (countdownDetected && num <= 1) {
+          setTimeout(() => onNewRound('countdown-end'), 300);
+          countdownDetected = false;
+        }
+
+        lastCountdownValue = num;
+      }
+    } else {
+      // Countdown disappeared
+      if (countdownDetected) {
+        countdownDetected = false;
+        lastCountdownValue = null;
+      }
+    }
+  }
+
+  setInterval(detectCountdown, 200);
 
 })();

@@ -1,6 +1,6 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.29)
- * 
+ * CoordX Pro — Side Panel Script (v1.8.32)
+ *
  * Dark Space Theme - Auto-detect enabled
  */
 

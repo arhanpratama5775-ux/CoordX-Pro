@@ -1,6 +1,6 @@
 /**
- * CoordX Pro — Main World Script (v1.8.29)
- * 
+ * CoordX Pro — Main World Script (v1.8.32)
+ *
  * GeoGuessr only - XHR/Fetch intercept for Google Maps API
  */
 

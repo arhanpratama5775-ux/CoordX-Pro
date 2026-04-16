@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.30-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.8.32-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, dan peta interaktif. Works di single player dan multiplayer!
@@ -46,11 +46,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.30/CoordX-Pro-v1.8.30.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.32/CoordX-Pro-v1.8.32.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.30/CoordX-Pro-v1.8.30.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.32/CoordX-Pro-v1.8.32.zip
 ```
 
 ### Installation Steps
@@ -142,7 +142,7 @@ Manifest V3 adalah versi terbaru dari sistem Chrome extension yang diperkenalkan
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.8.29",
+  "version": "1.8.32",
   "description": "Auto-detect Street View coordinates",
   "permissions": [
     "sidePanel",
@@ -998,6 +998,15 @@ if (guessDistance < 1 && !hasProperExploration) {
 ---
 
 ## 📝 Changelog
+
+### v1.8.32
+- 🔄 **Round Detection v2** - 7 detection methods for all game modes!
+- ⏱️ Timer countdown detection (multiplayer/duels)
+- 📊 Score screen detection
+- 🔀 Hash change detection
+- 🎯 Intermission screen detection
+- 🛡️ 2-second cooldown to prevent false triggers
+- 🐛 Console debug logs for easier troubleshooting
 
 ### v1.8.30
 - 🔄 **Multi-mode round detection** - Support Challenge, Multiplayer, Duels!
