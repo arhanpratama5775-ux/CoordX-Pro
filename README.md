@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.50-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.8.51-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, peta interaktif, dan **AUTO PLACE GUESS!** 🎯
@@ -13,6 +13,7 @@
 **CoordX Pro** adalah Chrome extension untuk game **GeoGuessr**. Extension ini otomatis mendeteksi koordinat Street View dan menampilkan:
 - 📍 Koordinat (Latitude, Longitude)
 - 🏠 Alamat lengkap (negara, kota, provinsi, dll)
+- 🏳️ **Country Flag** - Emoji bendera negara di header!
 - 🗺️ Peta interaktif dengan marker lokasi
 - 📋 Copy coordinates dengan satu klik
 - 🎯 **AUTO PLACE GUESS** - Place marker otomatis di map GeoGuessr!
@@ -38,6 +39,7 @@
 | 🤖 **Multiplayer Auto-Place** | Auto-place otomatis saat ronde baru di multiplayer! |
 | 🗺️ **Interactive Map** | Dark theme map dengan Leaflet |
 | 📍 **Reverse Geocoding** | Alamat lengkap via OpenStreetMap |
+| 🏳️ **Country Flag** | Emoji bendera negara di header! |
 | 📋 **Copy Coords** | One-click copy coordinates |
 | 🌙 **Dark Space Theme** | UI hitam dengan animated stars |
 | ⚡ **Auto Open Panel** | Side panel langsung terbuka saat klik icon |
@@ -49,11 +51,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.50/CoordX-Pro-v1.8.50.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.51/CoordX-Pro-v1.8.51.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.50/CoordX-Pro-v1.8.50.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.51/CoordX-Pro-v1.8.51.zip
 ```
 
 ### Installation Steps
@@ -167,7 +169,7 @@ Manifest V3 adalah versi terbaru dari sistem Chrome extension yang diperkenalkan
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.8.50",
+  "version": "1.8.51",
   "description": "Auto-detect Street View coordinates",
   "permissions": [
     "sidePanel",
@@ -506,6 +508,12 @@ function extractAndSendCoords(text) {
 ---
 
 ## 📝 Changelog
+
+### v1.8.51 🏳️
+- 🏳️ **COUNTRY FLAG!** - Emoji bendera negara di header!
+- 🎨 Flag emoji dari country code (ISO 3166-1 alpha-2)
+- 📝 Short name untuk negara populer (USA, UK, etc.)
+- ✨ UI yang clean dengan flag di sebelah toggle
 
 ### v1.8.50 📊
 - 📊 **UPDATED ACCURACY SETTINGS!** - Offset lebih realistis!

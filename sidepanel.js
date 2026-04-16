@@ -1,8 +1,9 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.50)
+ * CoordX Pro — Side Panel Script (v1.8.51)
  *
  * Dark Space Theme - Auto-detect enabled
  * Multiplayer auto-place support
+ * Country flag display
  */
 
 (function () {
@@ -38,7 +39,10 @@
     autoplaceSection: $('autoplaceSection'),
     accuracySelect: $('accuracySelect'),
     placeGuessBtn: $('placeGuessBtn'),
-    autoplaceStatus: $('autoplaceStatus')
+    autoplaceStatus: $('autoplaceStatus'),
+    // Country flag elements
+    countryFlag: $('countryFlag'),
+    flagName: $('flagName')
   };
 
   let currentLat = null;
@@ -243,6 +247,38 @@
 
   /* ─── Geocoding ──────────────────────────────────────── */
 
+  // Convert country code to flag emoji
+  function countryCodeToFlag(countryCode) {
+    if (!countryCode || countryCode.length !== 2) return '🌍';
+    
+    // Convert country code to regional indicator symbols
+    // A = 🇦 (U+1F1E6), B = 🇧 (U+1F1E7), etc.
+    const baseOffset = 0x1F1E6 - 65; // 'A' is 65 in ASCII
+    const char1 = String.fromCodePoint(countryCode.charCodeAt(0) + baseOffset);
+    const char2 = String.fromCodePoint(countryCode.charCodeAt(1) + baseOffset);
+    
+    return char1 + char2;
+  }
+
+  // Country code to short name mapping
+  const countryCodeNames = {
+    'US': 'USA', 'GB': 'UK', 'RU': 'Russia', 'DE': 'Germany',
+    'FR': 'France', 'JP': 'Japan', 'CN': 'China', 'KR': 'S.Korea',
+    'BR': 'Brazil', 'IN': 'India', 'AU': 'Australia', 'CA': 'Canada',
+    'IT': 'Italy', 'ES': 'Spain', 'MX': 'Mexico', 'ID': 'Indonesia',
+    'NL': 'Netherlands', 'TR': 'Turkey', 'SA': 'Saudi', 'AR': 'Argentina',
+    'TH': 'Thailand', 'PL': 'Poland', 'SE': 'Sweden', 'NO': 'Norway',
+    'FI': 'Finland', 'DK': 'Denmark', 'BE': 'Belgium', 'AT': 'Austria',
+    'CH': 'Swiss', 'PT': 'Portugal', 'CZ': 'Czech', 'GR': 'Greece',
+    'HU': 'Hungary', 'RO': 'Romania', 'UA': 'Ukraine', 'VN': 'Vietnam',
+    'MY': 'Malaysia', 'PH': 'Philippines', 'SG': 'Singapore', 'NZ': 'NZ',
+    'ZA': 'S.Africa', 'EG': 'Egypt', 'NG': 'Nigeria', 'IL': 'Israel',
+    'AE': 'UAE', 'TW': 'Taiwan', 'HK': 'HK', 'CL': 'Chile', 'CO': 'Colombia',
+    'PE': 'Peru', 'VE': 'Venezuela', 'IE': 'Ireland', 'SK': 'Slovakia',
+    'BG': 'Bulgaria', 'HR': 'Croatia', 'RS': 'Serbia', 'SI': 'Slovenia',
+    'EE': 'Estonia', 'LV': 'Latvia', 'LT': 'Lithuania', 'IS': 'Iceland'
+  };
+
   async function reverseGeocode(lat, lng) {
     els.addrDisplayName.textContent = 'Loading...';
     els.addressSection.classList.add('active');
@@ -268,6 +304,18 @@
         els.addrState.textContent = addr.state || '—';
         els.addrPostcode.textContent = addr.postcode || '—';
         els.addrCountry.textContent = addr.country || '—';
+
+        // Update country flag
+        if (addr.country_code) {
+          const flag = countryCodeToFlag(addr.country_code.toUpperCase());
+          const shortName = countryCodeNames[addr.country_code.toUpperCase()] || addr.country_code.toUpperCase();
+          
+          // Update flag display
+          const flagEmoji = els.countryFlag.querySelector('.flag-emoji');
+          if (flagEmoji) flagEmoji.textContent = flag;
+          els.flagName.textContent = shortName;
+          els.countryFlag.title = addr.country || shortName;
+        }
 
         if (els.addrDisplayName.textContent.length > 80) {
           els.addrDisplayName.textContent = els.addrDisplayName.textContent.substring(0, 77) + '...';
