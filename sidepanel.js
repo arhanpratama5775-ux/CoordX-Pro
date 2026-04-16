@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.55)
+ * CoordX Pro — Side Panel Script (v1.8.56)
  *
  * Cold Everest Theme - Auto-detect enabled
  * Multiplayer auto-place support
