@@ -79,7 +79,7 @@ Google Maps API (GetMetadata / SingleImageSearch)
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.27/CoordX-Pro-v1.8.27.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.29/CoordX-Pro-v1.8.29.zip
 ```
 
 ### Installation Steps
