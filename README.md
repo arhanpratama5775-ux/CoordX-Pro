@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.51-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.8.52-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, peta interaktif, dan **AUTO PLACE GUESS!** 🎯
@@ -51,11 +51,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.51/CoordX-Pro-v1.8.51.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.52/CoordX-Pro-v1.8.52.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.51/CoordX-Pro-v1.8.51.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.52/CoordX-Pro-v1.8.52.zip
 ```
 
 ### Installation Steps
@@ -93,12 +93,12 @@ Fitur ini **LANGSUNG BEKERJA** tanpa perlu buka peta! Cukup klik tombol dan mark
 | Setting | Offset Distance | Est. Points |
 |---------|-----------------|-------------|
 | **Perfect** | 0m (exact location) | 5000 |
-| **Near** | ~500m | 4990-4999 |
-| **Medium** | ~2km | 4950-4990 |
-| **Far** | ~10km | 4500-4800 |
-| **Very Far** | ~50km | 3000-4000 |
-| **Country** | ~200km | Varies |
-| **Random** | 1-100km random | Varies |
+| **Near** | 400m - 800m | 4985-4995 |
+| **Medium** | 1.5km - 3km | 4900-4970 |
+| **Far** | 8km - 15km | 4300-4700 |
+| **Very Far** | 40km - 70km | 2500-3500 |
+| **Country** | 150km - 300km | Varies |
+| **Random** | 0.5km - 100km | Varies |
 
 > ⚠️ **Tips:** Gunakan "Near", "Medium", atau "Far" agar tidak terlihat mencurigakan. Perfect score setiap ronde bisa menarik perhatian!
 
@@ -508,6 +508,15 @@ function extractAndSendCoords(text) {
 ---
 
 ## 📝 Changelog
+
+### v1.8.52 📊
+- 📊 **FIXED ACCURACY OFFSET!** - Sekarang pakai min-max range!
+  - Near: 400-800m (selalu di range ini, bukan 0-500m)
+  - Medium: 1.5-3km
+  - Far: 8-15km
+  - Very Far: 40-70km
+  - Country: 150-300km
+- ✅ Offset sekarang konsisten, tidak akan dapet 310m untuk Near
 
 ### v1.8.51 🏳️
 - 🏳️ **COUNTRY FLAG!** - Emoji bendera negara di header!
