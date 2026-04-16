@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.26)
+ * CoordX Pro — Side Panel Script (v1.8.29)
  * 
  * Dark Space Theme - Auto-detect enabled
  */
@@ -39,12 +39,6 @@
   let currentLng = null;
   let geocodeTimeout = null;
   let logsVisible = false;
-
-  function log(msg) {
-    console.log('[CoordX Pro Sidepanel]', msg);
-  }
-
-  log('Side panel v1.8.26 loaded');
 
   /* ─── Init ───────────────────────────────────────────── */
 
@@ -87,13 +81,10 @@
           Math.abs(lng - currentLng) > 0.0001;
         
         if (isDifferent) {
-          log('Poll detected new coords: ' + lat + ', ' + lng);
           updateUI(lat, lng, 'poll');
         }
       }
-    } catch (e) {
-      log('checkCoords error: ' + e.message);
-    }
+    } catch (e) {}
   }
 
   /* ─── Logs ───────────────────────────────────────────── */
@@ -142,11 +133,8 @@
 
   function updateUI(lat, lng, source) {
     if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-      log('updateUI: invalid coords');
       return;
     }
-    
-    log('updateUI: ' + lat.toFixed(4) + ', ' + lng.toFixed(4) + ' (from ' + source + ')');
     
     currentLat = lat;
     currentLng = lng;
@@ -163,14 +151,11 @@
     // Send to map iframe - try multiple times
     const sendToMap = () => {
       if (els.mapFrame?.contentWindow) {
-        log('Sending to map: ' + lat + ', ' + lng);
         els.mapFrame.contentWindow.postMessage({
           type: 'updateCoords',
           lat: lat,
           lng: lng
         }, '*');
-      } else {
-        log('mapFrame not ready');
       }
     };
     
@@ -192,7 +177,6 @@
     if (changes.lastCoords?.newValue) {
       const { lat, lng } = changes.lastCoords.newValue;
       if (lat && lng) {
-        log('Storage changed: ' + lat + ', ' + lng);
         updateUI(lat, lng, 'storage');
       }
     }
@@ -208,8 +192,6 @@
 
     geocodeTimeout = setTimeout(async () => {
       try {
-        log('Fetching geocoding for: ' + lat + ', ' + lng);
-        
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
         
         const response = await fetch(url, {
@@ -231,10 +213,7 @@
         if (els.addrDisplayName.textContent.length > 80) {
           els.addrDisplayName.textContent = els.addrDisplayName.textContent.substring(0, 77) + '...';
         }
-        
-        log('Geocoding done: ' + addr.country);
       } catch (err) {
-        log('Geocoding error: ' + err.message);
         els.addrDisplayName.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
         els.addrCountry.textContent = 'Lookup failed';
       }

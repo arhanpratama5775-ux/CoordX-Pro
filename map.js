@@ -1,13 +1,11 @@
 /**
- * CoordX Pro — Map Script (v1.7.7)
+ * CoordX Pro — Map Script (v1.8.29)
  * 
- * Simple marker only - no coords in popup
+ * Donut style marker
  */
 
 (function () {
   'use strict';
-
-  console.log('[CoordX Pro] Map loading...');
 
   // Initialize map
   const map = L.map('map', {
@@ -27,8 +25,6 @@
   let markerOuter = null;
 
   function updateMarker(lat, lng) {
-    console.log('[CoordX Pro] Map: updateMarker', lat, lng);
-
     // Remove old markers
     if (marker) {
       map.removeLayer(marker);
@@ -63,8 +59,6 @@
     map.flyTo([lat, lng], 15, {
       duration: 0.8
     });
-
-    console.log('[CoordX Pro] Map: marker set');
   }
 
   // Listen for messages from sidepanel
@@ -109,7 +103,5 @@
       setTimeout(fixMapSize, 100);
     }
   });
-
-  console.log('[CoordX Pro] Map ready');
 
 })();

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.8.28",
+  "version": "1.8.29",
   "description": "GeoGuessr cheat extension — auto-detect Street View coordinates with address info, interactive map, and multiplayer support.",
   "permissions": [
     "sidePanel",

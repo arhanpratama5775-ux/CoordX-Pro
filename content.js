@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.26)
+ * CoordX Pro — Content Script (v1.8.29)
  * 
  * GeoGuessr only - handle coords from main world
  */
@@ -9,15 +9,6 @@
 
   if (window.__coordxProInjected) return;
   window.__coordxProInjected = true;
-
-  function logToBackground(msg) {
-    try {
-      chrome.runtime.sendMessage({ type: 'log', message: msg });
-    } catch (e) {}
-  }
-
-  console.log('[CoordX Pro] Content v1.8.26 loaded');
-  logToBackground('Content v1.8.26 loaded');
 
   // Coords tracking
   let lastSentLat = null;
@@ -43,7 +34,6 @@
     blockedLat = null;
     blockedLng = null;
     blockedCount = 0;
-    logToBackground('🔄 Reset');
   }
 
   function sendCoords(lat, lng, source) {
@@ -53,7 +43,6 @@
     if (blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
         blockedCount++;
-        logToBackground('🚫 Blocked old coords (x' + blockedCount + ')');
         return false;
       }
     }
@@ -67,8 +56,6 @@
 
     lastSentLat = lat;
     lastSentLng = lng;
-
-    logToBackground('✅ SENT: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     try {
       chrome.runtime.sendMessage({
@@ -94,10 +81,6 @@
       const { lat, lng, source } = data;
       sendCoords(lat, lng, source);
     }
-    
-    if (data.type === 'COORDX_LOG') {
-      logToBackground('[MW] ' + data.message);
-    }
   });
 
   // Request injection
@@ -116,7 +99,6 @@
 
   // Init
   function init() {
-    logToBackground('🎮 GeoGuessr mode');
     requestMainWorldInjection();
   }
 
@@ -133,14 +115,10 @@
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
-      logToBackground('NEXT clicked');
-      
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        logToBackground('🚫 Block: ' + blockedLat.toFixed(4));
       }
-      
       lastSentLat = null;
       lastSentLng = null;
     }

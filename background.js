@@ -1,10 +1,9 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.27)
+ * CoordX Pro — Background Service Worker (v1.8.29)
  */
 
 const LOG_KEY = 'coordx_logs';
 const MAX_LOGS = 50;
-let lastLogTime = 0;
 
 async function addLog(message) {
   try {
@@ -16,32 +15,18 @@ async function addLog(message) {
   } catch (e) {}
 }
 
-function log(msg) {
-  console.log('[CoordX Pro]', msg);
-  const now = Date.now();
-  if (now - lastLogTime > 300) {
-    lastLogTime = now;
-    addLog(msg);
-  }
-}
-
 /* ─── Init ───────────────────────────────────────────── */
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.28');
 });
 
 /* ─── Auto Open Side Panel ───────────────────────────── */
 
-// Open side panel when extension icon is clicked
 chrome.action.onClicked.addListener(async (tab) => {
   try {
     await chrome.sidePanel.open({ tabId: tab.id });
-    log('Side panel opened via action click');
-  } catch (err) {
-    log('Failed to open side panel: ' + err.message);
-  }
+  } catch (err) {}
 });
 
 /* ─── Message Handler ────────────────────────────────── */
@@ -83,7 +68,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
       }
 
-      log('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+      addLog('✅ ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
       chrome.storage.local.set({ lastCoords: { lat, lng } });
       sendResponse({ success: true });
       break;
@@ -98,21 +83,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
 
     case 'injectMainWorld':
-      // Inject main-world.js into the MAIN world of the requesting tab
       if (sender.tab?.id) {
         chrome.scripting.executeScript({
           target: { tabId: sender.tab.id },
           files: ['main-world.js'],
           world: 'MAIN'
-        }).then(() => {
-          log('Main world script injected');
-        }).catch((e) => {
-          log('Inject failed: ' + e.message);
-        });
+        }).catch(() => {});
       }
       sendResponse({ success: true });
       break;
   }
 });
-
-log('Background v1.8.28 ready');

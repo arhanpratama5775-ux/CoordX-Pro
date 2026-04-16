@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.26)
+ * CoordX Pro — Main World Script (v1.8.29)
  * 
  * GeoGuessr only - XHR/Fetch intercept for Google Maps API
  */
@@ -8,21 +8,12 @@
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.26');
-
   function sendCoords(lat, lng, source) {
     window.postMessage({
       type: 'COORDX_COORDS',
       lat: lat,
       lng: lng,
       source: source
-    }, '*');
-  }
-
-  function sendLog(msg) {
-    window.postMessage({
-      type: 'COORDX_LOG',
-      message: msg
     }, '*');
   }
 
@@ -45,7 +36,6 @@
           const key = lat.toFixed(4) + ',' + lng.toFixed(4);
           if (key !== lastCoords) {
             lastCoords = key;
-            sendLog('📍 ' + source + ': ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
             sendCoords(lat, lng, source);
           }
         }
@@ -90,7 +80,5 @@
       return response;
     });
   };
-
-  sendLog('v1.8.26 ready - GeoGuessr intercept active');
 
 })();
