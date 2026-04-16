@@ -1,14 +1,15 @@
 /**
- * CoordX Pro — Content Script (v1.8.19)
+ * CoordX Pro — Content Script (v1.8.22)
  * 
  * Block old coords forever, accept new coords
+ * Reset on URL/game change
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV119Injected) return;
-  window.__coordxProV119Injected = true;
+  if (window.__coordxProV122Injected) return;
+  window.__coordxProV122Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,17 +17,34 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.19 loaded');
-  logToBackground('Content v1.8.19 loaded');
+  console.log('[CoordX Pro] Content v1.8.22 loaded');
+  logToBackground('Content v1.8.22 loaded');
 
-  // Last sent coordinates
+  // Current game domain
+  let currentGame = null;
+  
+  function detectGame() {
+    const host = window.location.hostname;
+    if (host.includes('geoguessr')) return 'geoguessr';
+    if (host.includes('worldguessr')) return 'worldguessr';
+    if (host.includes('openguessr')) return 'openguessr';
+    return 'unknown';
+  }
+  
+  function getGameKey() {
+    return 'game_' + detectGame();
+  }
+
+  // Last sent coordinates PER GAME
   let lastSentLat = null;
   let lastSentLng = null;
+  let lastSentGame = null;
   
-  // Blocked coords - FOREVER (until page reload)
+  // Blocked coords - FOREVER (until page reload or game change)
   let blockedLat = null;
   let blockedLng = null;
-  let blockedCount = 0; // Track how many coords we've blocked
+  let blockedGame = null;
+  let blockedCount = 0;
 
   function isValidCoord(lat, lng) {
     return !isNaN(lat) && !isNaN(lng) &&
@@ -37,15 +55,39 @@
       Math.abs(lng) > 0.001;
   }
 
+  function resetAll() {
+    lastSentLat = null;
+    lastSentLng = null;
+    lastSentGame = null;
+    blockedLat = null;
+    blockedLng = null;
+    blockedGame = null;
+    blockedCount = 0;
+    logToBackground('🔄 Full reset - game change detected');
+  }
+
   function sendCoords(lat, lng, source) {
     if (!isValidCoord(lat, lng)) return false;
+    
+    const game = detectGame();
 
-    // Block old coords FOREVER
+    // Reset if game changed
+    if (lastSentGame !== null && lastSentGame !== game) {
+      logToBackground('🎮 Game changed: ' + lastSentGame + ' → ' + game);
+      resetAll();
+    }
+    
+    lastSentGame = game;
+
+    // Block old coords - check if same game
     if (blockedLat !== null && blockedLng !== null) {
-      if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
-        blockedCount++;
-        logToBackground('🚫 Blocked old coords (x' + blockedCount + ')');
-        return false;
+      // Only block if same game
+      if (blockedGame === game) {
+        if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
+          blockedCount++;
+          logToBackground('🚫 Blocked old coords (x' + blockedCount + ') from ' + game);
+          return false;
+        }
       }
     }
 
@@ -59,14 +101,14 @@
     lastSentLat = lat;
     lastSentLng = lng;
 
-    logToBackground('✅ SENT: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    logToBackground('✅ SENT [' + game + ']: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     try {
       chrome.runtime.sendMessage({
         type: 'contentCoords',
         lat: lat,
         lng: lng,
-        source: source
+        source: source + '_' + game
       });
       return true;
     } catch (e) {
@@ -99,11 +141,7 @@
   // Force check listener
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'forceCheck') {
-      lastSentLat = null;
-      lastSentLng = null;
-      blockedLat = null;
-      blockedLng = null;
-      blockedCount = 0;
+      resetAll();
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -111,6 +149,8 @@
 
   // Init
   function init() {
+    currentGame = detectGame();
+    logToBackground('🎮 Detected game: ' + currentGame);
     requestMainWorldInjection();
   }
 
@@ -127,17 +167,41 @@
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
-      logToBackground('NEXT clicked');
+      const game = detectGame();
+      logToBackground('NEXT clicked on ' + game);
       
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        logToBackground('🚫 Block forever: ' + blockedLat.toFixed(4));
+        blockedGame = game;
+        logToBackground('🚫 Block forever [' + game + ']: ' + blockedLat.toFixed(4));
       }
       
       lastSentLat = null;
       lastSentLng = null;
     }
   }, true);
+
+  // Watch for URL changes (SPA navigation)
+  let lastUrl = window.location.href;
+  
+  function checkUrlChange() {
+    if (window.location.href !== lastUrl) {
+      const oldUrl = lastUrl;
+      lastUrl = window.location.href;
+      logToBackground('🔗 URL changed: ' + oldUrl + ' → ' + lastUrl);
+      
+      // Check if game changed
+      const oldGame = currentGame;
+      currentGame = detectGame();
+      
+      if (oldGame !== currentGame) {
+        logToBackground('🎮 Game navigation: ' + oldGame + ' → ' + currentGame);
+        resetAll();
+      }
+    }
+  }
+  
+  setInterval(checkUrlChange, 1000);
 
 })();

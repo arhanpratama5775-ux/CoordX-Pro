@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.21)
+ * CoordX Pro — Background Service Worker (v1.8.22)
  */
 
 const LOG_KEY = 'coordx_logs';
@@ -29,7 +29,7 @@ function log(msg) {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ trackingEnabled: true });
-  log('Extension installed v1.8.21');
+  log('Extension installed v1.8.22');
 });
 
 /* ─── Message Handler ────────────────────────────────── */
@@ -103,4 +103,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-log('Background v1.8.21 ready');
+log('Background v1.8.22 ready');
