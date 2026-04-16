@@ -87,6 +87,17 @@
       }
       map.flyTo([20, 0], 2, { duration: 0.5 });
     }
+
+    // Respond to map state request
+    if (data.type === 'GET_MAP_STATE') {
+      const center = map.getCenter();
+      window.parent.postMessage({
+        type: 'MAP_STATE_RESPONSE',
+        lat: center.lat,
+        lng: center.lng,
+        zoom: map.getZoom()
+      }, '*');
+    }
   });
 
   // Fix map size after load

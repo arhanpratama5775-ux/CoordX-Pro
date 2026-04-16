@@ -1,9 +1,11 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.29)
+ * CoordX Pro — Background Service Worker (v1.8.39)
  */
 
 const LOG_KEY = 'coordx_logs';
 const MAX_LOGS = 50;
+const DEBUG_KEY = 'coordx_debug';
+const MAX_DEBUG = 20;
 
 async function addLog(message) {
   try {
@@ -12,6 +14,16 @@ async function addLog(message) {
     logs.push({ time: new Date().toISOString(), message });
     if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
     await chrome.storage.local.set({ [LOG_KEY]: logs });
+  } catch (e) {}
+}
+
+async function addDebugLog(message) {
+  try {
+    const result = await chrome.storage.local.get([DEBUG_KEY]);
+    let logs = result[DEBUG_KEY] || [];
+    logs.push({ time: new Date().toISOString(), message });
+    if (logs.length > MAX_DEBUG) logs = logs.slice(-MAX_DEBUG);
+    await chrome.storage.local.set({ [DEBUG_KEY]: logs });
   } catch (e) {}
 }
 
@@ -92,5 +104,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       sendResponse({ success: true });
       break;
+
+    case 'placeGuess':
+      // Forward place guess request to content script
+      chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+        if (tabs[0]) {
+          try {
+            const response = await chrome.tabs.sendMessage(tabs[0].id, {
+              type: 'placeGuess',
+              lat: message.lat,
+              lng: message.lng,
+              accuracy: message.accuracy,
+              mapCenter: message.mapCenter,
+              mapZoom: message.mapZoom
+            });
+            sendResponse(response);
+          } catch (err) {
+            sendResponse({ success: false, error: 'Could not communicate with page. Make sure you are on a GeoGuessr game.' });
+          }
+        } else {
+          sendResponse({ success: false, error: 'No active tab found.' });
+        }
+      });
+      return true;
+
+    case 'debugLog':
+      // Store debug message
+      addDebugLog(message.message);
+      sendResponse({ success: true });
+      break;
+
+    case 'getDebugLogs':
+      chrome.storage.local.get([DEBUG_KEY]).then(result => {
+        sendResponse({ logs: result[DEBUG_KEY] || [] });
+      });
+      return true;
+
+    case 'clearDebugLogs':
+      chrome.storage.local.set({ [DEBUG_KEY]: [] }).then(() => {
+        sendResponse({ success: true });
+      });
+      return true;
   }
 });

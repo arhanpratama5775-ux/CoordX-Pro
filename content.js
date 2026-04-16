@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.32)
+ * CoordX Pro — Content Script (v1.8.39)
  *
  * GeoGuessr only - handle coords from main world
  * Support: Single Player, Challenge, Multiplayer/Duels
@@ -114,6 +114,17 @@
       const { lat, lng, source } = data;
       sendCoords(lat, lng, source);
     }
+
+    // Forward debug messages to background
+    if (data.type === 'COORDX_DEBUG') {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'debugLog',
+          message: data.message,
+          data: data.data
+        });
+      } catch (e) {}
+    }
   });
 
   // Request injection
@@ -128,6 +139,39 @@
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
+
+    // Handle place guess request - wait for response from main world
+    if (message.type === 'placeGuess') {
+      // Set up listener for main world response
+      const responseHandler = (event) => {
+        if (event.source !== window) return;
+        if (event.data?.type === 'COORDX_PLACE_RESULT') {
+          window.removeEventListener('message', responseHandler);
+          sendResponse(event.data);
+        }
+      };
+      window.addEventListener('message', responseHandler);
+
+      // Timeout after 5 seconds
+      setTimeout(() => {
+        window.removeEventListener('message', responseHandler);
+        sendResponse({ success: false, error: 'Timeout', debug: 'No response from page' });
+      }, 5000);
+
+      // Send request to main world with map state
+      window.postMessage({
+        type: 'COORDX_PLACE_GUESS',
+        lat: message.lat,
+        lng: message.lng,
+        accuracy: message.accuracy,
+        mapCenter: message.mapCenter,
+        mapZoom: message.mapZoom
+      }, '*');
+
+      return true; // Keep channel open for async response
+    }
+
+    return true;
   });
 
   // Init
@@ -190,8 +234,16 @@
   }
 
   // Use MutationObserver for URL detection (SPA navigation)
-  const urlObserver = new MutationObserver(checkUrlChange);
-  urlObserver.observe(document.body, { subtree: true, childList: true });
+  // Wait for document.body to be available
+  function setupUrlObserver() {
+    if (!document.body) {
+      setTimeout(setupUrlObserver, 100);
+      return;
+    }
+    const urlObserver = new MutationObserver(checkUrlChange);
+    urlObserver.observe(document.body, { subtree: true, childList: true });
+  }
+  setupUrlObserver();
 
   // Also poll for hash changes (sometimes MutationObserver misses hash)
   setInterval(checkUrlChange, 500);

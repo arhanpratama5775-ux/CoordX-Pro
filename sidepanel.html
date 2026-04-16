@@ -111,6 +111,41 @@
       </div>
     </section>
 
+    <!-- Auto Place Section -->
+    <section class="autoplace-section" id="autoplaceSection">
+      <h2 class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <circle cx="12" cy="12" r="3"></circle>
+          <line x1="12" y1="2" x2="12" y2="6"></line>
+          <line x1="12" y1="18" x2="12" y2="22"></line>
+          <line x1="2" y1="12" x2="6" y2="12"></line>
+          <line x1="18" y1="12" x2="22" y2="12"></line>
+        </svg>
+        Auto Place Guess
+      </h2>
+      <div class="autoplace-controls">
+        <div class="autoplace-row">
+          <label class="autoplace-label">Accuracy</label>
+          <select id="accuracySelect" class="accuracy-select">
+            <option value="perfect">Perfect (0m)</option>
+            <option value="near">Near (~100m)</option>
+            <option value="medium" selected>Medium (~500m)</option>
+            <option value="far">Far (~2km)</option>
+            <option value="random">Random (0-5km)</option>
+          </select>
+        </div>
+        <button class="place-btn" id="placeGuessBtn" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span>Place Guess</span>
+        </button>
+        <div class="autoplace-status" id="autoplaceStatus">Waiting for coordinates...</div>
+      </div>
+    </section>
+
     <!-- Debug Logs Section -->
     <section class="logs-section" id="logsSection">
       <h2 class="section-title clickable" id="logsToggle">
@@ -137,7 +172,7 @@
     <footer class="footer">
       <div class="footer-content">
         <span class="footer-text">Auto-detect enabled</span>
-        <span class="version">v1.8.26</span>
+        <span class="version">v1.8.41</span>
       </div>
     </footer>
   </div>
