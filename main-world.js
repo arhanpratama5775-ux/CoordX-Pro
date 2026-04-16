@@ -1,8 +1,9 @@
 /**
- * CoordX Pro — Main World Script (v1.8.48)
+ * CoordX Pro — Main World Script (v1.8.49)
  *
  * GeoGuessr only - XHR/Fetch intercept for coordinates
  * Place Guess using React Fiber (Location Resolver method)
+ * Auto-detect new rounds in multiplayer
  */
 
 (function() {
@@ -12,6 +13,9 @@
   // ─── GLOBAL COORDINATES STORAGE ───────────────────────────
   window.__coordxGlobalCoords = { lat: 0, lng: 0 };
   window.__coordxMaps = [];
+  window.__coordxAutoPlaceEnabled = true; // Auto-place for multiplayer
+  window.__coordxAccuracy = 'perfect'; // Default accuracy
+  window.__coordxLastRound = null; // Track last round
 
   // Track Google Maps instances via defineProperty
   const originalDefineProperty = Object.defineProperty;
@@ -126,6 +130,240 @@
       return response;
     });
   };
+
+})();
+
+// ─── MULTIPLAYER ROUND DETECTION ─────────────────────────────
+
+(function() {
+  'use strict';
+
+  let lastUrl = location.href;
+  let lastGuessMapState = false;
+  let roundCheckInterval = null;
+
+  // Listen for settings from content script
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    const data = event.data;
+
+    if (data.type === 'COORDX_SETTINGS') {
+      if (data.accuracy !== undefined) {
+        window.__coordxAccuracy = data.accuracy;
+      }
+    }
+  });
+
+  // Detect new round by URL change
+  function checkUrlChange() {
+    if (location.href !== lastUrl) {
+      const oldUrl = lastUrl;
+      lastUrl = location.href;
+      console.log('[CoordX] URL changed:', oldUrl, '->', location.href);
+
+      // Check if this is a game URL change
+      if (isGameUrl(location.href)) {
+        console.log('[CoordX] Game URL detected, new round possible');
+        setTimeout(() => attemptAutoPlace('url-change'), 1000);
+      }
+    }
+  }
+
+  // Check if URL is a game URL
+  function isGameUrl(url) {
+    const patterns = [
+      /geoguessr\.com\/(game|challenge|duels|battle-royale|country-streak|world)/i,
+      /geoguessr\.com\/[a-f0-9-]{36}/i, // Game IDs
+      /openguessr\.com\/game/i,
+      /worldguessr\.com/i
+    ];
+    return patterns.some(p => p.test(url));
+  }
+
+  // Detect new round by DOM changes (guess map appearing)
+  function watchGuessMap() {
+    const observer = new MutationObserver(() => {
+      const guessMap = document.querySelector('[class*="guess-map_canvas"]');
+      const hasGuessMap = !!guessMap;
+
+      // Guess map just appeared = new round started
+      if (hasGuessMap && !lastGuessMapState) {
+        console.log('[CoordX] Guess map appeared - new round detected!');
+        setTimeout(() => attemptAutoPlace('guessmap-appear'), 500);
+      }
+
+      lastGuessMapState = hasGuessMap;
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  // Detect round from API responses
+  function watchForRoundChanges() {
+    // Intercept GeoGuessr API calls
+    const originalFetch = window.fetch;
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : (input.url || '');
+      const response = await originalFetch.apply(this, arguments);
+
+      // Check for multiplayer API calls
+      if (url.includes('/api/v3/games/') || url.includes('/api/v4/games/')) {
+        try {
+          const clone = response.clone();
+          const data = await clone.json();
+
+          // Check for round changes
+          if (data.round || data.currentRound) {
+            const roundId = data.round?.id || data.currentRound || JSON.stringify(data);
+
+            if (roundId !== window.__coordxLastRound) {
+              console.log('[CoordX] API round change detected:', roundId);
+              window.__coordxLastRound = roundId;
+              setTimeout(() => attemptAutoPlace('api-round'), 800);
+            }
+          }
+        } catch (e) {}
+      }
+
+      return response;
+    };
+  }
+
+  // Attempt auto-place with current coordinates
+  function attemptAutoPlace(source) {
+    const coords = window.__coordxGlobalCoords;
+
+    if (!coords || coords.lat === 0 || coords.lng === 0) {
+      console.log('[CoordX] No coordinates for auto-place, waiting...');
+      // Retry after a delay
+      setTimeout(() => {
+        const retryCoords = window.__coordxGlobalCoords;
+        if (retryCoords && retryCoords.lat !== 0 && retryCoords.lng !== 0) {
+          doAutoPlace(retryCoords.lat, retryCoords.lng, source + '-retry');
+        }
+      }, 2000);
+      return;
+    }
+
+    doAutoPlace(coords.lat, coords.lng, source);
+  }
+
+  // Perform auto-place
+  function doAutoPlace(lat, lng, source) {
+    if (!window.__coordxAutoPlaceEnabled) {
+      console.log('[CoordX] Auto-place disabled');
+      return;
+    }
+
+    console.log('[CoordX] Auto-placing:', lat, lng, 'source:', source);
+
+    // Calculate offset based on accuracy
+    const accuracy = window.__coordxAccuracy;
+    let offset = { lat: 0, lng: 0 };
+
+    if (accuracy !== 'perfect') {
+      offset = getAccuracyOffset(accuracy);
+    }
+
+    const guessLat = lat + offset.lat;
+    const guessLng = lng + offset.lng;
+
+    // Place the marker
+    const result = placeGuess(guessLat, guessLng, 0);
+
+    if (result.success) {
+      console.log('[CoordX] Auto-place SUCCESS:', result.debug);
+
+      // Notify sidepanel
+      window.postMessage({
+        type: 'COORDX_AUTO_PLACED',
+        lat: guessLat,
+        lng: guessLng,
+        source: source,
+        debug: result.debug
+      }, '*');
+    } else {
+      console.log('[CoordX] Auto-place FAILED:', result.error);
+
+      // Retry once
+      setTimeout(() => {
+        const retry = placeGuess(guessLat, guessLng, 0);
+        if (retry.success) {
+          window.postMessage({
+            type: 'COORDX_AUTO_PLACED',
+            lat: guessLat,
+            lng: guessLng,
+            source: source + '-retry',
+            debug: retry.debug
+          }, '*');
+        }
+      }, 500);
+    }
+  }
+
+  // Calculate random offset based on accuracy
+  function getAccuracyOffset(accuracy) {
+    let maxOffsetMeters;
+
+    switch (accuracy) {
+      case 'perfect':
+        maxOffsetMeters = 0;
+        break;
+      case 'near':
+        maxOffsetMeters = 100;
+        break;
+      case 'medium':
+        maxOffsetMeters = 500;
+        break;
+      case 'far':
+        maxOffsetMeters = 2000;
+        break;
+      case 'random':
+        maxOffsetMeters = Math.random() * 5000;
+        break;
+      default:
+        maxOffsetMeters = 500;
+    }
+
+    const maxOffsetDegrees = maxOffsetMeters / 111000;
+    const angle = Math.random() * 2 * Math.PI;
+    const distance = Math.random() * maxOffsetDegrees;
+
+    return {
+      lat: Math.sin(angle) * distance,
+      lng: Math.cos(angle) * distance
+    };
+  }
+
+  // Initialize round detection
+  function init() {
+    console.log('[CoordX] Initializing multiplayer round detection...');
+
+    // Watch URL changes
+    setInterval(checkUrlChange, 500);
+
+    // Watch DOM for guess map
+    if (document.body) {
+      watchGuessMap();
+    } else {
+      document.addEventListener('DOMContentLoaded', watchGuessMap);
+    }
+
+    // Watch API for round changes
+    watchForRoundChanges();
+
+    console.log('[CoordX] Multiplayer detection ready');
+  }
+
+  // Start when ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
 
 })();
 

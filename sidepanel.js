@@ -1,7 +1,8 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.46)
+ * CoordX Pro — Side Panel Script (v1.8.49)
  *
  * Dark Space Theme - Auto-detect enabled
+ * Multiplayer auto-place support
  */
 
 (function () {
@@ -215,6 +216,31 @@
     }
   });
 
+  /* ─── Listen for Auto-Place Events ───────────────────── */
+
+  // Listen for auto-place notifications from content script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'autoPlaced') {
+      const { lat, lng, source, debug } = message;
+      
+      // Update UI to show auto-place happened
+      els.autoplaceStatus.textContent = `Auto-placed! (${source})`;
+      els.autoplaceStatus.classList.add('ready');
+      els.autoplaceStatus.classList.remove('error');
+      els.placeGuessBtn.classList.add('placed');
+      els.placeGuessBtn.querySelector('span').textContent = 'Auto-Placed!';
+
+      // Reset after delay
+      setTimeout(() => {
+        els.placeGuessBtn.classList.remove('placed');
+        els.placeGuessBtn.querySelector('span').textContent = 'Place Guess';
+        els.placeGuessBtn.disabled = false;
+        els.autoplaceStatus.textContent = 'Ready for next round';
+      }, 3000);
+    }
+    return true;
+  });
+
   /* ─── Geocoding ──────────────────────────────────────── */
 
   async function reverseGeocode(lat, lng) {
@@ -277,9 +303,16 @@
 
   /* ─── Auto Place Guess ───────────────────────────────── */
 
-  // Save accuracy setting
+  // Save accuracy setting and notify main-world
   els.accuracySelect.addEventListener('change', async () => {
-    await chrome.storage.local.set({ accuracy: els.accuracySelect.value });
+    const accuracy = els.accuracySelect.value;
+    await chrome.storage.local.set({ accuracy: accuracy });
+
+    // Send to content script -> main-world
+    chrome.runtime.sendMessage({
+      type: 'updateAccuracy',
+      accuracy: accuracy
+    });
   });
 
   // Place guess button

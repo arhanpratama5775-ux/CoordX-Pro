@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Background Service Worker (v1.8.39)
+ * CoordX Pro — Background Service Worker (v1.8.49)
  */
 
 const LOG_KEY = 'coordx_logs';
@@ -145,5 +145,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
       });
       return true;
+
+    case 'updateAccuracy':
+      // Forward accuracy update to content script
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'updateAccuracy',
+            accuracy: message.accuracy
+          }).catch(() => {});
+        }
+      });
+      sendResponse({ success: true });
+      break;
+
+    case 'autoPlaced':
+      // Log auto-place event
+      addLog('🎯 Auto-place: ' + message.source);
+      // Forward to sidepanel (if open)
+      sendResponse({ success: true });
+      break;
   }
 });

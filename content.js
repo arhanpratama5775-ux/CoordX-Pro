@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.39)
+ * CoordX Pro — Content Script (v1.8.49)
  *
  * GeoGuessr only - handle coords from main world
  * Support: Single Player, Challenge, Multiplayer/Duels
@@ -115,6 +115,19 @@
       sendCoords(lat, lng, source);
     }
 
+    // Forward auto-place events to sidepanel
+    if (data.type === 'COORDX_AUTO_PLACED') {
+      try {
+        chrome.runtime.sendMessage({
+          type: 'autoPlaced',
+          lat: data.lat,
+          lng: data.lng,
+          source: data.source,
+          debug: data.debug
+        });
+      } catch (e) {}
+    }
+
     // Forward debug messages to background
     if (data.type === 'COORDX_DEBUG') {
       try {
@@ -137,6 +150,15 @@
     if (message.type === 'forceCheck') {
       resetAll();
       requestMainWorldInjection();
+      sendResponse({ success: true });
+    }
+
+    // Handle accuracy update from sidepanel
+    if (message.type === 'updateAccuracy') {
+      window.postMessage({
+        type: 'COORDX_SETTINGS',
+        accuracy: message.accuracy
+      }, '*');
       sendResponse({ success: true });
     }
 
