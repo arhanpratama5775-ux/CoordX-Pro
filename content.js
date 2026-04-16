@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Content Script (v1.8.30)
+ * CoordX Pro — Content Script (v1.8.31)
  * 
  * GeoGuessr only - handle coords from main world
  * Support: Single Player, Challenge, Multiplayer/Duels
@@ -182,31 +182,60 @@
   // Check for round changes periodically
   setInterval(detectRoundChange, 1000);
 
-  // Method 4: Timer detection (for modes with countdown)
-  // Detect when timer resets or new game state appears
-  let lastTimerValue = null;
-  function detectTimerReset() {
-    const timerElements = [
-      document.querySelector('[class*="timer"]'),
+  // Method 4: Countdown detection (3...2...1...0 pattern)
+  // Detect countdown that appears between rounds
+  let lastCountdownValue = null;
+  let countdownDetected = false;
+  
+  function detectCountdown() {
+    // Look for countdown elements
+    const countdownElements = [
       document.querySelector('[class*="countdown"]'),
-      document.querySelector('[data-qa="timer"]'),
+      document.querySelector('[class*="count-down"]'),
+      document.querySelector('[data-qa="countdown"]'),
+      document.querySelector('[class*="intermission"]'),
+      document.querySelector('[class*="between-round"]'),
+      ...Array.from(document.querySelectorAll('div')).filter(el => {
+        const text = el.innerText?.trim();
+        // Look for standalone numbers 3, 2, 1, 0
+        return text && /^[0-3]$/.test(text) && 
+               el.offsetWidth > 20 && el.offsetHeight > 20; // Must be visible
+      })
     ].filter(Boolean);
 
-    for (const timer of timerElements) {
-      const text = timer.innerText || timer.textContent;
-      const match = text.match(/(\d+)/);
-      if (match) {
-        const timerValue = parseInt(match[1]);
-        // If timer jumped up significantly (reset), likely new round
-        if (lastTimerValue !== null && timerValue > lastTimerValue + 5) {
-          onNewRound('timer');
+    for (const el of countdownElements) {
+      const text = el.innerText?.trim();
+      const num = parseInt(text);
+      
+      if (!isNaN(num) && num >= 0 && num <= 3) {
+        // Countdown detected
+        if (lastCountdownValue !== null) {
+          // If countdown went 3->2->1->0 or similar decreasing pattern
+          if (num < lastCountdownValue) {
+            countdownDetected = true;
+          }
+          // When countdown reaches 0 or disappears, new round starts
+          if (countdownDetected && (num === 0 || num < lastCountdownValue)) {
+            if (num === 0) {
+              // Wait a bit after countdown ends for new round to load
+              setTimeout(() => onNewRound('countdown'), 500);
+              countdownDetected = false;
+            }
+          }
         }
-        lastTimerValue = timerValue;
-        break;
+        lastCountdownValue = num;
+        return;
       }
+    }
+    
+    // If countdown element disappeared after being detected
+    if (countdownDetected && countdownElements.length === 0) {
+      setTimeout(() => onNewRound('countdown-disappear'), 300);
+      countdownDetected = false;
+      lastCountdownValue = null;
     }
   }
 
-  setInterval(detectTimerReset, 500);
+  setInterval(detectCountdown, 300);
 
 })();
