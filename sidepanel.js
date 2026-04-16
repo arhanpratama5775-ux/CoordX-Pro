@@ -1,7 +1,7 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.54)
+ * CoordX Pro — Side Panel Script (v1.8.55)
  *
- * Dark Space Theme - Auto-detect enabled
+ * Cold Everest Theme - Auto-detect enabled
  * Multiplayer auto-place support
  * Country flag display
  */

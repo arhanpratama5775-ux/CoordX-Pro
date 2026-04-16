@@ -1,6 +1,6 @@
 /**
- * CoordX Pro — Side Panel Styles (v1.8.54)
- * Cold Everest Theme - Icy mountain design
+ * CoordX Pro — Side Panel Styles (v1.8.55)
+ * Cold Everest Theme - Icy mountain design with real Everest background
  */
 
 /* ─── Reset & Base ────────────────────────────────────── */
@@ -12,39 +12,39 @@
 }
 
 :root {
-  /* Cold Ice Colors */
-  --bg-void: #0a0c10;
-  --bg-dark: #0d1117;
-  --bg-card: rgba(13, 17, 23, 0.9);
-  --bg-card-hover: rgba(22, 27, 34, 0.95);
-  --border-color: rgba(56, 139, 253, 0.15);
-  --border-glow: rgba(88, 166, 255, 0.2);
-  
-  /* Text */
-  --text-primary: #e6edf3;
-  --text-secondary: rgba(139, 148, 158, 0.9);
-  --text-muted: rgba(110, 118, 129, 0.7);
-  
-  /* Ice Accent Colors */
-  --accent: #58a6ff;
-  --accent-light: #79c0ff;
-  --accent-glow: rgba(88, 166, 255, 0.25);
-  --ice-blue: #7dd3fc;
-  --ice-cyan: #67e8f9;
-  --frost: #bae6fd;
-  --success: #3fb950;
-  --warning: #d29922;
-  --danger: #f85149;
-  
+  /* Cold Black Colors - Deep frozen dark */
+  --bg-void: #050608;
+  --bg-dark: #080a0e;
+  --bg-card: rgba(5, 6, 8, 0.92);
+  --bg-card-hover: rgba(10, 12, 18, 0.95);
+  --border-color: rgba(100, 150, 200, 0.12);
+  --border-glow: rgba(120, 180, 230, 0.18);
+
+  /* Text - Cold white/blue tint */
+  --text-primary: #e8f0f8;
+  --text-secondary: rgba(160, 180, 200, 0.9);
+  --text-muted: rgba(120, 140, 160, 0.7);
+
+  /* Cold Blue Accent Colors */
+  --accent: #4a9eff;
+  --accent-light: #6bb8ff;
+  --accent-glow: rgba(74, 158, 255, 0.3);
+  --ice-blue: #5cc4ff;
+  --ice-cyan: #4ad4ff;
+  --frost: #8ed4ff;
+  --success: #2dd4a0;
+  --warning: #f0b040;
+  --danger: #ff5a5a;
+
   /* Gradients */
-  --accent-gradient: linear-gradient(135deg, #58a6ff 0%, #38bdf8 50%, #22d3ee 100%);
-  --ice-gradient: linear-gradient(180deg, #0a0c10 0%, #0f172a 50%, #0a0c10 100%);
-  
+  --accent-gradient: linear-gradient(135deg, #3a8fff 0%, #2ac4ff 50%, #1ad4ff 100%);
+  --ice-gradient: linear-gradient(180deg, #050608 0%, #0a1018 50%, #050608 100%);
+
   /* Radius */
   --radius: 12px;
   --radius-sm: 8px;
   --radius-xs: 6px;
-  
+
   /* Transition */
   --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -72,21 +72,22 @@ html, body {
   pointer-events: none;
   z-index: 0;
   background: 
-    /* Snow peaks at top */
+    /* Dark overlay gradient for readability */
     linear-gradient(180deg, 
-      rgba(15, 23, 42, 0.3) 0%,
-      rgba(15, 23, 42, 0.5) 15%,
-      rgba(10, 12, 16, 0.7) 30%,
-      rgba(10, 12, 16, 0.95) 60%,
-      var(--bg-void) 100%
+      rgba(5, 6, 8, 0.4) 0%,
+      rgba(5, 6, 8, 0.5) 20%,
+      rgba(5, 6, 8, 0.7) 40%,
+      rgba(5, 6, 8, 0.92) 70%,
+      rgba(5, 6, 8, 0.98) 100%
     ),
-    /* Mountain silhouette */
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300' preserveAspectRatio='xMidYMax slice'%3E%3Cdefs%3E%3ClinearGradient id='m1' x1='0%25' y1='0%25' x2='0%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23e2e8f0' stop-opacity='0.15'/%3E%3Cstop offset='100%25' stop-color='%23334155' stop-opacity='0.05'/%3E%3C/linearGradient%3E%3ClinearGradient id='m2' x1='0%25' y1='0%25' x2='0%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%23cbd5e1' stop-opacity='0.12'/%3E%3Cstop offset='100%25' stop-color='%231e293b' stop-opacity='0.03'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23m1)' d='M0 300 L0 180 L60 140 L100 160 L150 90 L180 110 L220 50 L260 100 L300 70 L340 120 L400 80 L400 300 Z'/%3E%3Cpath fill='url(%23m2)' d='M0 300 L0 200 L80 170 L120 190 L180 120 L240 160 L280 100 L320 150 L400 110 L400 300 Z'/%3E%3C/svg%3E");
+    /* Real Everest image */
+    url('assets/everest-bg.jpg');
   background-size: 100% 100%, cover;
-  background-position: top center;
+  background-position: center center;
+  background-repeat: no-repeat;
 }
 
-/* Snow/Frost overlay effect */
+/* Snow/Frost overlay effect - subtle cold particles */
 .snow-overlay {
   position: fixed;
   top: 0;
@@ -95,36 +96,34 @@ html, body {
   height: 100%;
   pointer-events: none;
   z-index: 1;
-  background: 
-    radial-gradient(1px 1px at 10% 10%, rgba(255,255,255,0.4), transparent),
-    radial-gradient(1px 1px at 20% 25%, rgba(255,255,255,0.3), transparent),
-    radial-gradient(1.5px 1.5px at 35% 15%, rgba(186,230,253,0.5), transparent),
-    radial-gradient(1px 1px at 50% 8%, rgba(255,255,255,0.35), transparent),
-    radial-gradient(1px 1px at 65% 20%, rgba(255,255,255,0.25), transparent),
-    radial-gradient(1.5px 1.5px at 80% 12%, rgba(125,211,252,0.4), transparent),
-    radial-gradient(1px 1px at 90% 18%, rgba(255,255,255,0.3), transparent),
-    radial-gradient(1px 1px at 15% 35%, rgba(255,255,255,0.2), transparent),
-    radial-gradient(1px 1px at 45% 30%, rgba(186,230,253,0.3), transparent),
-    radial-gradient(1px 1px at 75% 28%, rgba(255,255,255,0.25), transparent);
-  animation: snowfall 20s linear infinite;
-  opacity: 0.6;
+  background:
+    radial-gradient(1px 1px at 10% 10%, rgba(74, 212, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 25% 20%, rgba(255, 255, 255, 0.2), transparent),
+    radial-gradient(1.5px 1.5px at 40% 8%, rgba(74, 158, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 55% 15%, rgba(255, 255, 255, 0.25), transparent),
+    radial-gradient(1px 1px at 70% 5%, rgba(92, 196, 255, 0.3), transparent),
+    radial-gradient(1.5px 1.5px at 85% 18%, rgba(255, 255, 255, 0.2), transparent),
+    radial-gradient(1px 1px at 15% 30%, rgba(74, 212, 255, 0.25), transparent),
+    radial-gradient(1px 1px at 60% 25%, rgba(255, 255, 255, 0.2), transparent);
+  animation: snowfall 25s linear infinite;
+  opacity: 0.5;
 }
 
 @keyframes snowfall {
-  0% { 
+  0% {
     transform: translateY(0);
-    opacity: 0.6;
+    opacity: 0.5;
   }
   50% {
-    opacity: 0.4;
+    opacity: 0.3;
   }
-  100% { 
-    transform: translateY(100px);
-    opacity: 0.6;
+  100% {
+    transform: translateY(80px);
+    opacity: 0.5;
   }
 }
 
-/* Scrollbar */
+/* Scrollbar - Cold blue theme */
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -134,12 +133,12 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(88, 166, 255, 0.2);
+  background: rgba(74, 158, 255, 0.25);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(88, 166, 255, 0.4);
+  background: rgba(74, 158, 255, 0.45);
 }
 
 /* ─── Side Panel Container ────────────────────────────── */
@@ -167,7 +166,7 @@ html, body {
   border-radius: var(--radius);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 0 30px rgba(88, 166, 255, 0.05);
+  box-shadow: 0 0 30px rgba(74, 158, 255, 0.08);
 }
 
 .header-left {
@@ -178,7 +177,7 @@ html, body {
 
 .logo-icon {
   font-size: 22px;
-  filter: drop-shadow(0 0 8px rgba(88, 166, 255, 0.5));
+  filter: drop-shadow(0 0 8px rgba(74, 158, 255, 0.5));
 }
 
 .header-text h1 {
@@ -200,7 +199,7 @@ html, body {
 
 .subtitle.found {
   color: var(--ice-cyan);
-  text-shadow: 0 0 10px rgba(103, 232, 249, 0.3);
+  text-shadow: 0 0 10px rgba(74, 212, 255, 0.4);
 }
 
 .subtitle.paused {
@@ -226,8 +225,8 @@ html, body {
 }
 
 .country-flag:hover {
-  background: rgba(30, 40, 55, 0.9);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(15, 20, 30, 0.9);
+  border-color: rgba(74, 158, 255, 0.35);
 }
 
 .flag-emoji {
@@ -270,8 +269,8 @@ html, body {
 }
 
 .coord-section.active .coord-card {
-  border-color: rgba(88, 166, 255, 0.3);
-  box-shadow: 0 0 30px rgba(88, 166, 255, 0.08);
+  border-color: rgba(74, 158, 255, 0.35);
+  box-shadow: 0 0 30px rgba(74, 158, 255, 0.1);
 }
 
 .coord-row {
@@ -295,7 +294,7 @@ html, body {
   font-weight: 600;
   font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', monospace;
   color: var(--text-primary);
-  text-shadow: 0 0 15px rgba(88, 166, 255, 0.3);
+  text-shadow: 0 0 15px rgba(74, 158, 255, 0.35);
 }
 
 .coord-divider {
@@ -325,8 +324,8 @@ html, body {
 }
 
 .copy-btn:hover {
-  background: rgba(30, 40, 55, 0.95);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(15, 20, 30, 0.95);
+  border-color: rgba(74, 158, 255, 0.35);
   color: var(--ice-blue);
 }
 
@@ -392,7 +391,7 @@ html, body {
 }
 
 .address-item:hover {
-  background: rgba(30, 40, 55, 0.4);
+  background: rgba(15, 25, 40, 0.4);
 }
 
 .address-label {
@@ -459,7 +458,7 @@ html, body {
 }
 
 .autoplace-section.active .autoplace-controls {
-  border-color: rgba(88, 166, 255, 0.3);
+  border-color: rgba(74, 158, 255, 0.35);
 }
 
 .autoplace-row {
@@ -497,13 +496,13 @@ html, body {
 }
 
 .accuracy-select:hover {
-  border-color: rgba(88, 166, 255, 0.4);
+  border-color: rgba(74, 158, 255, 0.45);
 }
 
 .accuracy-select:focus {
   outline: none;
   border-color: var(--ice-blue);
-  box-shadow: 0 0 15px rgba(125, 211, 252, 0.2);
+  box-shadow: 0 0 15px rgba(92, 196, 255, 0.25);
 }
 
 .place-btn {
@@ -522,12 +521,12 @@ html, body {
   font-weight: 600;
   cursor: pointer;
   transition: all var(--transition);
-  box-shadow: 0 4px 20px rgba(88, 166, 255, 0.25);
+  box-shadow: 0 4px 20px rgba(74, 158, 255, 0.3);
 }
 
 .place-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 25px rgba(88, 166, 255, 0.35);
+  box-shadow: 0 6px 25px rgba(74, 158, 255, 0.4);
 }
 
 .place-btn:active:not(:disabled) {
@@ -555,7 +554,7 @@ html, body {
 
 .autoplace-status.ready {
   color: var(--ice-cyan);
-  text-shadow: 0 0 8px rgba(103, 232, 249, 0.3);
+  text-shadow: 0 0 8px rgba(74, 212, 255, 0.4);
 }
 
 .autoplace-status.error {
@@ -580,7 +579,7 @@ html, body {
 }
 
 .logs-section .section-title:hover {
-  border-color: rgba(88, 166, 255, 0.3);
+  border-color: rgba(74, 158, 255, 0.35);
 }
 
 .log-count {
@@ -658,8 +657,8 @@ html, body {
 }
 
 .log-btn:hover {
-  background: rgba(30, 40, 55, 0.95);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(15, 25, 40, 0.95);
+  border-color: rgba(74, 158, 255, 0.35);
   color: var(--ice-blue);
 }
 
