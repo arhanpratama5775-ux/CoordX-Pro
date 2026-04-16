@@ -1,15 +1,15 @@
 /**
- * CoordX Pro — Content Script (v1.8.22)
+ * CoordX Pro — Content Script (v1.8.23)
  * 
- * Block old coords forever, accept new coords
- * Reset on URL/game change
+ * Handle coords from main world
+ * Different handling per game
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV122Injected) return;
-  window.__coordxProV122Injected = true;
+  if (window.__coordxProV123Injected) return;
+  window.__coordxProV123Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -17,10 +17,10 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.22 loaded');
-  logToBackground('Content v1.8.22 loaded');
+  console.log('[CoordX Pro] Content v1.8.23 loaded');
+  logToBackground('Content v1.8.23 loaded');
 
-  // Current game domain
+  // Current game
   let currentGame = null;
   
   function detectGame() {
@@ -30,20 +30,15 @@
     if (host.includes('openguessr')) return 'openguessr';
     return 'unknown';
   }
-  
-  function getGameKey() {
-    return 'game_' + detectGame();
-  }
 
-  // Last sent coordinates PER GAME
+  // Coords tracking
   let lastSentLat = null;
   let lastSentLng = null;
   let lastSentGame = null;
   
-  // Blocked coords - FOREVER (until page reload or game change)
+  // Blocking (for GeoGuessr only)
   let blockedLat = null;
   let blockedLng = null;
-  let blockedGame = null;
   let blockedCount = 0;
 
   function isValidCoord(lat, lng) {
@@ -61,9 +56,8 @@
     lastSentGame = null;
     blockedLat = null;
     blockedLng = null;
-    blockedGame = null;
     blockedCount = 0;
-    logToBackground('🔄 Full reset - game change detected');
+    logToBackground('🔄 Full reset');
   }
 
   function sendCoords(lat, lng, source) {
@@ -79,19 +73,31 @@
     
     lastSentGame = game;
 
-    // Block old coords - check if same game
-    if (blockedLat !== null && blockedLng !== null) {
-      // Only block if same game
-      if (blockedGame === game) {
+    // BLOCKING LOGIC - Different per game
+    
+    // GeoGuessr: Block old coords after NEXT
+    if (game === 'geoguessr') {
+      if (blockedLat !== null && blockedLng !== null) {
         if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
           blockedCount++;
-          logToBackground('🚫 Blocked old coords (x' + blockedCount + ') from ' + game);
+          logToBackground('🚫 Blocked old GeoGuessr coords (x' + blockedCount + ')');
+          return false;
+        }
+      }
+    }
+    
+    // WorldGuessr: Just skip duplicates, no blocking
+    // This is because __NEXT_DATA__ might stay the same
+    if (game === 'worldguessr') {
+      if (lastSentLat !== null && lastSentLng !== null) {
+        if (Math.abs(lastSentLat - lat) < 0.01 && Math.abs(lastSentLng - lng) < 0.01) {
+          // Same coords, skip
           return false;
         }
       }
     }
 
-    // Skip if same as last sent
+    // Skip if exactly same as last sent
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -163,18 +169,21 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Handle NEXT - block old coords FOREVER
+  // Handle NEXT - block old coords for GeoGuessr only
   document.addEventListener('click', (e) => {
+    const game = detectGame();
+    
+    // Only for GeoGuessr
+    if (game !== 'geoguessr') return;
+    
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
-      const game = detectGame();
-      logToBackground('NEXT clicked on ' + game);
+      logToBackground('NEXT clicked on GeoGuessr');
       
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockedGame = game;
-        logToBackground('🚫 Block forever [' + game + ']: ' + blockedLat.toFixed(4));
+        logToBackground('🚫 Block: ' + blockedLat.toFixed(4));
       }
       
       lastSentLat = null;
@@ -182,16 +191,14 @@
     }
   }, true);
 
-  // Watch for URL changes (SPA navigation)
+  // Watch for URL changes
   let lastUrl = window.location.href;
   
   function checkUrlChange() {
     if (window.location.href !== lastUrl) {
-      const oldUrl = lastUrl;
       lastUrl = window.location.href;
-      logToBackground('🔗 URL changed: ' + oldUrl + ' → ' + lastUrl);
+      logToBackground('🔗 URL changed');
       
-      // Check if game changed
       const oldGame = currentGame;
       currentGame = detectGame();
       
