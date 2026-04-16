@@ -1,14 +1,15 @@
 /**
- * CoordX Pro — Main World Script (v1.8.25)
+ * CoordX Pro — Main World Script (v1.8.26)
  * 
- * Debug WorldGuessr __NEXT_DATA__ structure
+ * Intercept ALL requests to find WorldGuessr coordinates API
+ * WorldGuessr doesn't use __NEXT_DATA__ for coords - they use API calls
  */
 
 (function() {
   if (window.__coordxMainInjected) return;
   window.__coordxMainInjected = true;
 
-  console.log('[CoordX Pro] Main world v1.8.25');
+  console.log('[CoordX Pro] Main world v1.8.26');
 
   function sendCoords(lat, lng, source) {
     window.postMessage({
@@ -37,106 +38,84 @@
   const game = detectGame();
   sendLog('Game: ' + game);
 
-  // ─── DEEP LOG __NEXT_DATA__ FOR WORLDGUESSR ────────────────
+  // Track found coords to avoid duplicates
+  let lastFoundCoords = null;
 
-  function logNextDataStructure() {
-    if (game !== 'worldguessr') return;
+  // ─── SEARCH FOR COORDS IN RESPONSE ───────────────────────────
+
+  function searchForCoords(text, source) {
+    if (!text || text.length < 10) return;
     
-    try {
-      const nd = window.__NEXT_DATA__;
-      if (!nd) {
-        sendLog('❌ No __NEXT_DATA__');
-        return;
-      }
-
-      sendLog('=== __NEXT_DATA__ STRUCTURE ===');
-      
-      // Log top level keys
-      sendLog('Top keys: ' + Object.keys(nd).join(', '));
-      
-      // Check props
-      if (nd.props) {
-        sendLog('props keys: ' + Object.keys(nd.props).join(', '));
-        
-        // Check pageProps
-        if (nd.props.pageProps) {
-          const pp = nd.props.pageProps;
-          sendLog('pageProps keys: ' + Object.keys(pp).join(', '));
-          
-          // Log each key's type and sample
-          for (const key of Object.keys(pp)) {
-            const val = pp[key];
-            const type = typeof val;
-            
-            if (type === 'object' && val !== null) {
-              if (Array.isArray(val)) {
-                sendLog('  ' + key + ': array[' + val.length + ']');
-                if (val.length > 0) {
-                  sendLog('    [0] keys: ' + Object.keys(val[0]).join(', '));
-                }
-              } else {
-                sendLog('  ' + key + ': object with keys: ' + Object.keys(val).slice(0,10).join(', '));
-              }
-            } else {
-              sendLog('  ' + key + ': ' + type);
-            }
-          }
-        } else {
-          sendLog('No pageProps');
+    let found = false;
+    
+    // Pattern 1: [null,null,lat,lng]
+    let matches = text.matchAll(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/g);
+    for (const match of matches) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+        if (key !== lastFoundCoords) {
+          lastFoundCoords = key;
+          sendLog('📍 [' + source + '] [null,null]: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+          sendCoords(lat, lng, source);
+          found = true;
         }
-      } else {
-        sendLog('No props');
       }
-      
-      // Also search for coordinates
-      findCoordsInObject(nd, '__NEXT_DATA__', 0);
-      
-    } catch (e) {
-      sendLog('Error: ' + e.message);
     }
+    
+    // Pattern 2: "lat":123.456,"lng":78.90
+    matches = text.matchAll(/"lat"\s*:\s*(-?\d+\.\d+)\s*,\s*"lng"\s*:\s*(-?\d+\.\d+)/g);
+    for (const match of matches) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+        if (key !== lastFoundCoords) {
+          lastFoundCoords = key;
+          sendLog('📍 [' + source + '] lat/lng: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+          sendCoords(lat, lng, source);
+          found = true;
+        }
+      }
+    }
+    
+    // Pattern 3: "latitude":123.456,"longitude":78.90
+    matches = text.matchAll(/"latitude"\s*:\s*(-?\d+\.\d+)\s*,\s*"longitude"\s*:\s*(-?\d+\.\d+)/g);
+    for (const match of matches) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+        if (key !== lastFoundCoords) {
+          lastFoundCoords = key;
+          sendLog('📍 [' + source + '] latitude/longitude: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+          sendCoords(lat, lng, source);
+          found = true;
+        }
+      }
+    }
+    
+    // Pattern 4: "location":{"lat":...,"lng":...}
+    matches = text.matchAll(/"location"\s*:\s*\{[^}]*"lat"\s*:\s*(-?\d+\.\d+)[^}]*"lng"\s*:\s*(-?\d+\.\d+)[^}]*\}/g);
+    for (const match of matches) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+        if (key !== lastFoundCoords) {
+          lastFoundCoords = key;
+          sendLog('📍 [' + source + '] location object: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+          sendCoords(lat, lng, source);
+          found = true;
+        }
+      }
+    }
+    
+    return found;
   }
 
-  function findCoordsInObject(obj, path, depth) {
-    if (depth > 6 || !obj || typeof obj !== 'object') return;
-    
-    try {
-      // Check if this object has lat/lng
-      if (typeof obj.lat === 'number' && typeof obj.lng === 'number') {
-        if (obj.lat >= -90 && obj.lat <= 90 && obj.lng >= -180 && obj.lng <= 180) {
-          sendLog('📍 FOUND at ' + path + ': ' + obj.lat.toFixed(4) + ', ' + obj.lng.toFixed(4));
-          sendCoords(obj.lat, obj.lng, 'nextdata');
-          return true;
-        }
-      }
-      
-      // Also check latitude/longitude
-      if (typeof obj.latitude === 'number' && typeof obj.longitude === 'number') {
-        if (obj.latitude >= -90 && obj.latitude <= 90 && obj.longitude >= -180 && obj.longitude <= 180) {
-          sendLog('📍 FOUND at ' + path + ': ' + obj.latitude.toFixed(4) + ', ' + obj.longitude.toFixed(4));
-          sendCoords(obj.latitude, obj.longitude, 'nextdata');
-          return true;
-        }
-      }
-      
-      // Search children
-      for (const key in obj) {
-        if (key.startsWith('_') || key === 'window') continue;
-        const childPath = path + '.' + key;
-        if (findCoordsInObject(obj[key], childPath, depth + 1)) {
-          return true;
-        }
-      }
-    } catch (e) {}
-    
-    return false;
-  }
-
-  // Run immediately and after delays
-  setTimeout(logNextDataStructure, 500);
-  setTimeout(logNextDataStructure, 2000);
-  setTimeout(logNextDataStructure, 5000);
-
-  // ─── GEOGUESSR XHR INTERCEPT ─────────────────────────────────
+  // ─── INTERCEPT ALL XHR ───────────────────────────────────────
 
   const originalOpen = XMLHttpRequest.prototype.open;
   const originalSend = XMLHttpRequest.prototype.send;
@@ -149,75 +128,120 @@
 
   XMLHttpRequest.prototype.send = function() {
     const url = this._url || '';
+    const method = this._method || 'GET';
+    
+    // Log WorldGuessr requests
+    if (game === 'worldguessr' && !url.includes('chrome-extension') && !url.includes('google-analytics') && !url.includes('googletagmanager')) {
+      const endpoint = url.split('?')[0];
+      sendLog('🔍 XHR: ' + method + ' ' + endpoint.substring(0, 80));
+    }
     
     this.addEventListener('load', function() {
-      if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
-        try {
-          const match = this.responseText.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
-          if (match) {
-            const lat = parseFloat(match[1]);
-            const lng = parseFloat(match[2]);
-            if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-              sendLog('📍 GeoGuessr XHR: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-              sendCoords(lat, lng, 'xhr');
-            }
-          }
-        } catch (e) {}
-      }
+      try {
+        const text = this.responseText;
+        
+        // GeoGuessr: Google Maps API
+        if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
+          searchForCoords(text, 'xhr-geo');
+        }
+        
+        // WorldGuessr: Search all responses
+        if (game === 'worldguessr') {
+          searchForCoords(text, 'xhr');
+        }
+      } catch (e) {}
     });
     
     return originalSend.apply(this, arguments);
   };
 
-  // Fetch intercept for GeoGuessr
+  // ─── INTERCEPT ALL FETCH ─────────────────────────────────────
+
   const originalFetch = window.fetch;
   window.fetch = function(input, init) {
     const url = typeof input === 'string' ? input : (input.url || '');
+    const method = init?.method || 'GET';
+    
+    // Log WorldGuessr requests
+    if (game === 'worldguessr' && !url.includes('chrome-extension') && !url.includes('google-analytics') && !url.includes('googletagmanager')) {
+      const endpoint = url.split('?')[0];
+      sendLog('🔍 Fetch: ' + method + ' ' + endpoint.substring(0, 80));
+    }
     
     return originalFetch.apply(this, arguments).then(response => {
-      if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
-        const clonedResponse = response.clone();
-        clonedResponse.text().then(text => {
-          try {
-            const match = text.match(/\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/);
-            if (match) {
-              const lat = parseFloat(match[1]);
-              const lng = parseFloat(match[2]);
-              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                sendLog('📍 GeoGuessr Fetch: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
-                sendCoords(lat, lng, 'fetch');
-              }
-            }
-          } catch (e) {}
-        });
-      }
+      const endpoint = url.split('?')[0];
+      
+      // Clone and search
+      response.clone().text().then(text => {
+        try {
+          // GeoGuessr
+          if (url.includes('GetMetadata') || url.includes('SingleImageSearch')) {
+            searchForCoords(text, 'fetch-geo');
+          }
+          
+          // WorldGuessr: Search all
+          if (game === 'worldguessr') {
+            searchForCoords(text, 'fetch');
+          }
+        } catch (e) {}
+      });
+      
       return response;
     });
   };
 
-  // ─── POLL FOR URL CHANGES ─────────────────────────────────
+  // ─── ALSO CHECK WEBSOCKET ───────────────────────────────────
 
-  let lastUrl = window.location.href;
-  let lastCoordString = null;
-
-  setInterval(() => {
-    // Check URL change
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      lastCoordString = null;
-      sendLog('URL changed, re-checking');
-      setTimeout(logNextDataStructure, 500);
-    }
+  const originalWebSocket = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    sendLog('🔌 WebSocket: ' + url);
     
-    // Poll for coords
+    const ws = new originalWebSocket(url, protocols);
+    
+    ws.addEventListener('message', (event) => {
+      try {
+        const data = event.data;
+        if (typeof data === 'string') {
+          searchForCoords(data, 'ws');
+        }
+      } catch (e) {}
+    });
+    
+    return ws;
+  };
+
+  // ─── CHECK LOCALSTORAGE/SESSIONSTORAGE ──────────────────────
+
+  function checkStorage() {
+    if (game !== 'worldguessr') return;
+    
     try {
-      const nd = window.__NEXT_DATA__;
-      if (nd && findCoordsInObject(nd, '__NEXT_DATA__', 0)) {
-        // Found coords
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const val = localStorage.getItem(key);
+        if (val && (val.includes('lat') || val.includes('lng') || val.includes('coordinate'))) {
+          sendLog('💾 localStorage[' + key + '] has coords data');
+          searchForCoords(val, 'storage');
+        }
       }
     } catch (e) {}
-  }, 1000);
+  }
 
-  sendLog('Main world v1.8.25 ready');
+  setTimeout(checkStorage, 2000);
+
+  // ─── WATCH URL FOR GAME CHANGES ──────────────────────────────
+
+  let lastUrl = window.location.href;
+  
+  setInterval(() => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      lastFoundCoords = null;
+      sendLog('🔄 URL changed: ' + window.location.href);
+      checkStorage();
+    }
+  }, 500);
+
+  sendLog('v1.8.26 ready - intercepting ALL requests');
 
 })();
