@@ -8,14 +8,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Animated stars background -->
-  <div class="stars-bg"></div>
+  <!-- Everest Background -->
+  <div class="everest-bg"></div>
+  <div class="snow-overlay"></div>
 
   <div class="sidepanel">
     <!-- Header -->
     <header class="header">
       <div class="header-left">
-        <div class="logo-icon">🚀</div>
+        <div class="logo-icon">🏔️</div>
         <div class="header-text">
           <h1>CoordX Pro</h1>
           <span class="subtitle" id="statusText">Searching for location...</span>
@@ -26,10 +27,6 @@
           <span class="flag-emoji">🌍</span>
           <span class="flag-name" id="flagName">—</span>
         </div>
-        <label class="toggle-switch" title="Toggle tracking">
-          <input type="checkbox" id="trackingToggle" checked>
-          <span class="toggle-slider"></span>
-        </label>
       </div>
     </header>
 
@@ -133,12 +130,12 @@
           <label class="autoplace-label">Accuracy</label>
           <select id="accuracySelect" class="accuracy-select">
             <option value="perfect">Perfect (0m)</option>
-            <option value="near">Near (~500m)</option>
-            <option value="medium" selected>Medium (~2km)</option>
-            <option value="far">Far (~10km)</option>
-            <option value="veryfar">Very Far (~50km)</option>
-            <option value="country">Country (~200km)</option>
-            <option value="random">Random (1-100km)</option>
+            <option value="near">Near (400-800m)</option>
+            <option value="medium" selected>Medium (1.5-3km)</option>
+            <option value="far">Far (8-15km)</option>
+            <option value="veryfar">Very Far (40-70km)</option>
+            <option value="country">Country (150-300km)</option>
+            <option value="random">Random (0.5-100km)</option>
           </select>
         </div>
         <button class="place-btn" id="placeGuessBtn" disabled>
@@ -177,8 +174,8 @@
     <!-- Footer -->
     <footer class="footer">
       <div class="footer-content">
-        <span class="footer-text">Auto-detect enabled</span>
-        <span class="version">v1.8.51</span>
+        <span class="footer-text">❄️ Auto-detect enabled</span>
+        <span class="version">v1.8.54</span>
       </div>
     </footer>
   </div>

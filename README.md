@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.53-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.8.54-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, peta interaktif, dan **AUTO PLACE GUESS!** 🎯
@@ -51,11 +51,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.53/CoordX-Pro-v1.8.53.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.54/CoordX-Pro-v1.8.54.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.53/CoordX-Pro-v1.8.53.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.54/CoordX-Pro-v1.8.54.zip
 ```
 
 ### Installation Steps
@@ -508,6 +508,14 @@ function extractAndSendCoords(text) {
 ---
 
 ## 📝 Changelog
+
+### v1.8.54 🏔️
+- 🏔️ **NEW COLD EVEREST THEME!** - UI dingin dengan background gunung Everest!
+- ❄️ Warna tema icy blue & frost
+- 🗑️ Hapus toggle on/off yang nggak kepake
+- ✨ Logo baru: 🏔️
+- 🌨️ Animasi snow overlay
+- 💎 Glassmorphism cards dengan blur effect
 
 ### v1.8.53 🔧
 - 🔧 **FIXED DOUBLE OFFSET BUG!** - Offset sekarang hanya dihitung sekali

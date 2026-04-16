@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Main World Script (v1.8.53)
+ * CoordX Pro — Main World Script (v1.8.54)
  *
  * GeoGuessr only - XHR/Fetch intercept for coordinates
  * Place Guess using React Fiber (Location Resolver method)

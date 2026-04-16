@@ -1,5 +1,5 @@
 /**
- * CoordX Pro — Side Panel Script (v1.8.53)
+ * CoordX Pro — Side Panel Script (v1.8.54)
  *
  * Dark Space Theme - Auto-detect enabled
  * Multiplayer auto-place support
@@ -13,7 +13,6 @@
 
   const els = {
     statusText: $('statusText'),
-    trackingToggle: $('trackingToggle'),
     coordSection: $('coordSection'),
     latValue: $('latValue'),
     lngValue: $('lngValue'),
@@ -70,11 +69,7 @@
   /* ─── Init ───────────────────────────────────────────── */
 
   async function init() {
-    const storage = await chrome.storage.local.get(['trackingEnabled', 'lastCoords', 'accuracy']);
-
-    if (storage.trackingEnabled !== undefined) {
-      els.trackingToggle.checked = storage.trackingEnabled;
-    }
+    const storage = await chrome.storage.local.get(['lastCoords', 'accuracy']);
 
     // Restore accuracy setting
     if (storage.accuracy) {
@@ -328,13 +323,6 @@
   }
 
   /* ─── Controls ───────────────────────────────────────── */
-
-  els.trackingToggle.addEventListener('change', async () => {
-    const enabled = els.trackingToggle.checked;
-    await chrome.runtime.sendMessage({ type: 'toggleTracking', enabled });
-    els.statusText.textContent = enabled ? 'Searching...' : 'Paused';
-    els.statusText.classList.toggle('paused', !enabled);
-  });
 
   els.copyCoordsBtn.addEventListener('click', () => {
     if (!currentLat || !currentLng) return;
