@@ -1,56 +1,55 @@
-# CoordX Pro 🚀
+# CoordX Pro 🚀 - GeoGuessr & WorldGuessr Cheat Extension
 
-**Chrome Extension untuk Cheat Game Geography** — Auto-detect koordinat Street View dengan detail alamat lengkap.
+[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
+[![Version](https://img.shields.io/badge/version-1.8.21-green)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+> **Auto-detect Street View coordinates untuk GeoGuessr dan WorldGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, dan peta interaktif.
+
+---
+
+## 🔍 Apa itu CoordX Pro?
+
+**CoordX Pro** adalah Chrome extension untuk game geography seperti **GeoGuessr** dan **WorldGuessr**. Extension ini otomatis mendeteksi koordinat Street View dan menampilkan:
+- 📍 Koordinat (Latitude, Longitude)
+- 🏠 Alamat lengkap (negara, kota, provinsi, dll)
+- 🗺️ Peta interaktif dengan marker lokasi
+- 📋 Copy coordinates dengan satu klik
 
 ---
 
 ## 🎮 Game Support
 
-| Game | Status | Mode |
-|------|--------|------|
-| **GeoGuessr** | ✅ Working | Single & Multiplayer |
-| **WorldGuessr** | ✅ Working | Single & Multiplayer |
-| OpenGuessr | 🚧 Coming Soon | - |
+| Game | Status | Mode | Website |
+|------|--------|------|---------|
+| **GeoGuessr** | ✅ Working | Single & Multiplayer | [geoguessr.com](https://www.geoguessr.com) |
+| **WorldGuessr** | ✅ Working | Single & Multiplayer | [worldguessr.com](https://www.worldguessr.com) |
+| OpenGuessr | 🚧 Coming Soon | - | - |
 
 ---
 
 ## ⚙️ Cara Kerja Extension
 
-### Teknologi Utama
-
 CoordX Pro menggunakan teknik **XHR/Fetch Interception** untuk menangkap data koordinat langsung dari API Google Maps.
+
+### Teknologi Utama
 
 #### 1. XHR Interception (Main World Injection)
 
-Extension menginjeksi script ke `MAIN` world (bukan ISOLATED) untuk mengintercept XMLHttpRequest:
+Extension menginjeksi script ke `MAIN` world untuk mengintercept XMLHttpRequest:
 
 ```javascript
-// Intercept XHR calls
-const originalOpen = XMLHttpRequest.prototype.open;
-const originalSend = XMLHttpRequest.prototype.send;
-
-XMLHttpRequest.prototype.open = function(method, url) {
-    this._url = url;
-    return originalOpen.apply(this, arguments);
-};
-
+// Intercept Google Maps API calls
 XMLHttpRequest.prototype.send = function() {
     this.addEventListener('load', function() {
-        // Check Google Maps API endpoints
-        if (this._url && (this._url.includes('GetMetadata') || 
-            this._url.includes('SingleImageSearch'))) {
-            // Extract coordinates with regex
+        if (this._url.includes('GetMetadata') || 
+            this._url.includes('SingleImageSearch')) {
+            // Extract coordinates: [null,null,LAT,LNG]
             const match = this.responseText.match(
                 /\[null,null,(-?\d+\.\d+),(-?\d+\.\d+)\]/
             );
-            if (match) {
-                const lat = parseFloat(match[1]);
-                const lng = parseFloat(match[2]);
-                // Send to content script
-            }
         }
     });
-    return originalSend.apply(this, arguments);
 };
 ```
 
@@ -63,41 +62,17 @@ Google Maps API Response
         ↓
    Regex Extract: [null,null,LAT,LNG]
         ↓
-   Content Script (via window.postMessage)
+   Content Script → Background → Storage
         ↓
-   Background Service Worker
-        ↓
-   Chrome Storage
-        ↓
-   Sidepanel UI
+   Sidepanel UI (Coordinates, Address, Map)
 ```
 
-#### 3. Round Detection
+#### 3. Auto Round Detection
 
-Saat pemain klik **NEXT** di GeoGuessr:
-1. Content script detect click pada button NEXT
-2. Block koordinat lama secara permanent
-3. Tunggu XHR intercept baru untuk koordinat ronde berikutnya
-4. Update UI dengan koordinat baru
-
-#### 4. Reverse Geocoding
-
-Menggunakan **Nominatim API** (OpenStreetMap) untuk mendapatkan:
-- Display Name (alamat lengkap)
-- Neighborhood
-- Suburb/Village
-- City/Town
-- District/County
-- State
-- Postcode
-- Country
-
-#### 5. Interactive Map
-
-Menggunakan **Leaflet.js** dengan tile layer dari CartoDB:
-- Dark theme map
-- Marker dengan popup
-- Auto-center ke lokasi
+- Detect ketika pemain klik **NEXT** di GeoGuessr
+- Block koordinat lama secara permanent
+- Tunggu XHR intercept baru untuk koordinat ronde baru
+- Works di **multiplayer** mode!
 
 ---
 
@@ -105,69 +80,99 @@ Menggunakan **Leaflet.js** dengan tile layer dari CartoDB:
 
 ```
 CoordX-Pro/
-├── manifest.json        # MV3 extension config
-├── background.js        # Service worker (message handling, logging)
-├── content.js           # Content script (coordinate forwarding)
-├── main-world.js        # Main world script (XHR intercept)
-├── sidepanel.html       # Side panel UI
-├── sidepanel.js         # Side panel logic
-├── style.css            # Dark space theme
-├── popup.html/js        # Extension popup
+├── manifest.json        # Chrome MV3 config
+├── background.js        # Service worker
+├── content.js           # Content script
+├── main-world.js        # XHR intercept (MAIN world)
+├── sidepanel.html/js    # Side panel UI
+├── popup.html/js        # Extension popup (PC/Laptop)
 ├── map.html/js          # Leaflet map iframe
-└── leaflet/             # Leaflet library
+└── style.css            # Dark space theme
 ```
 
 ---
 
 ## ✨ Features
 
-- 🎯 **Auto-detect coordinates** — Otomatis saat Street View load
-- 🔄 **Auto round detection** — Detect ronde baru di multiplayer
-- 🗺️ **Interactive map** — Dark theme dengan marker
-- 📍 **Full address details** — Reverse geocoding lengkap
-- 📋 **Copy coordinates** — One-click copy
-- 🌙 **Dark Space Theme** — UI hitam luar angkasa dengan animated stars
-- 🐛 **Debug Logs** — In-extension logging untuk mobile debugging
+| Feature | Description |
+|---------|-------------|
+| 🎯 **Auto-detect** | Koordinat otomatis terdeteksi saat Street View load |
+| 🔄 **Auto Round Detection** | Detect ronde baru di multiplayer |
+| 🗺️ **Interactive Map** | Dark theme map dengan Leaflet |
+| 📍 **Reverse Geocoding** | Alamat lengkap via OpenStreetMap |
+| 📋 **Copy Coords** | One-click copy coordinates |
+| 🌙 **Dark Space Theme** | UI hitam dengan animated stars |
+| 🖥️ **Popup Support** | Popup untuk PC/Laptop |
+| 🐛 **Debug Logs** | In-extension logging |
 
 ---
 
-## 📥 Download
+## 📥 Download & Install
 
-**GitHub Release:**
+### Download
 ```
 https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip
 ```
+
+### Installation Steps
+
+1. Download ZIP dari link di atas
+2. Extract ZIP file
+3. Buka Chrome → `chrome://extensions/`
+4. Enable **Developer mode** (toggle kanan atas)
+5. Klik **Load unpacked**
+6. Pilih folder yang sudah di-extract
+7. Selesai! 🎉
+
+---
+
+## 🚀 Cara Pakai
+
+1. Buka **GeoGuessr** atau **WorldGuessr**
+2. Mulai game
+3. Klik icon extension CoordX Pro
+4. **PC/Laptop:** Popup muncul → klik "Open Panel"
+5. Koordinat akan auto-detect saat Street View load
+6. Ronden berganti? Auto-detect lokasi baru!
 
 ---
 
 ## 📝 Changelog
 
-### v1.8.20
+### v1.8.21
+- 🖥️ Enable popup for PC/Laptop
 - 🎨 Dark space theme with animated stars
-- ❌ Removed "New Round" button (auto-detect now works automatically)
-- 🚀 New rocket logo
+
+### v1.8.20
+- 🎨 Dark space theme
+- ❌ Removed "New Round" button (auto-detect works automatically)
 
 ### v1.8.18
-- ✅ GeoGuessr round detection FIXED!
-- 🔧 Implemented XHR intercept approach from PlonkIT
-- 🎯 Coordinates extracted directly from Google Maps API
+- ✅ GeoGuessr round detection FIXED
+- 🔧 XHR intercept approach from PlonkIT
 
 ### v1.8.0
 - ✅ GeoGuessr support added
-- 🔧 Parse __NEXT_DATA__ for coordinate extraction
 
 ### v1.0.0
 - 🎉 Initial release for WorldGuessr
 
 ---
 
+## 🏷️ Keywords
+
+`geoguessr cheat` `geoguessr hack` `geoguessr extension` `geoguessr coordinates` `worldguessr cheat` `worldguessr hack` `worldguessr extension` `street view coordinates` `geography game cheat` `chrome extension geoguessr` `auto location geoguessr` `geoguessr location finder` `geoguessr coordinates hack` `worldguessr location`
+
+---
+
 ## 👨‍💻 Creator
 
-**Developed by:**
-- **AI Agent:** Super Z (GLM Model by Z.ai)
-- **Human Collaborator:** arhanpratama5775-ux
+| Role | Name |
+|------|------|
+| **AI Agent Developer** | Super Z (GLM Model by Z.ai) |
+| **Human Collaborator** | arhanpratama5775-ux |
 
-This extension was built through collaborative development between human and AI, with the AI agent handling:
+Built through human-AI collaboration. The AI agent handled:
 - Architecture design
 - XHR interception implementation
 - Round detection logic
@@ -179,10 +184,18 @@ This extension was built through collaborative development between human and AI,
 
 ## 📄 License
 
-MIT License — Use freely at your own risk.
+**MIT License** — Use freely at your own risk.
 
 ---
 
 ## ⚠️ Disclaimer
 
-This extension is for educational purposes only. Using cheats in online games may violate their terms of service. The developers are not responsible for any consequences of using this extension.
+This extension is for **educational purposes** only. Using cheats in online games may violate their terms of service. The developers are not responsible for any consequences of using this extension.
+
+---
+
+## 🔗 Links
+
+- **Repository:** [github.com/arhanpratama5775-ux/CoordX-Pro](https://github.com/arhanpratama5775-ux/CoordX-Pro)
+- **Download:** [Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/archive/refs/heads/main.zip)
+- **Report Issues:** [GitHub Issues](https://github.com/arhanpratama5775-ux/CoordX-Pro/issues)
