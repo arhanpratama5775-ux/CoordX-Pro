@@ -1,14 +1,14 @@
 /**
- * CoordX Pro — Content Script (v1.8.16)
+ * CoordX Pro — Content Script (v1.8.17)
  * 
- * Fix continuous update issue and better round sync
+ * Simple approach: accept NEW coords, block OLD coords after NEXT
  */
 
 (function () {
   'use strict';
 
-  if (window.__coordxProV116Injected) return;
-  window.__coordxProV116Injected = true;
+  if (window.__coordxProV117Injected) return;
+  window.__coordxProV117Injected = true;
 
   function logToBackground(msg) {
     try {
@@ -16,24 +16,12 @@
     } catch (e) {}
   }
 
-  console.log('[CoordX Pro] Content v1.8.16 loaded');
-  logToBackground('Content v1.8.16 loaded');
+  console.log('[CoordX Pro] Content v1.8.17 loaded');
+  logToBackground('Content v1.8.17 loaded');
 
-  // Current round index (0-based)
-  let currentRoundIndex = 0;
-  
-  // Track which round we last synced to (prevent repeated syncs)
-  let lastSyncedRound = -1;
-  
-  // Last sent coordinates - PERSIST across checks
+  // Last sent coordinates
   let lastSentLat = null;
   let lastSentLng = null;
-  
-  // Count of same coords received (for auto-sync)
-  let coordReceiveCount = 0;
-  let lastReceivedLat = null;
-  let lastReceivedLng = null;
-  let lastReceivedRound = null;
   
   // Block exact coords after NEXT
   let blockedLat = null;
@@ -54,14 +42,15 @@
 
     const now = Date.now();
 
-    // Block EXACT coords only (not nearby)
+    // Block EXACT coords after NEXT click
     if (now < blockUntil && blockedLat !== null && blockedLng !== null) {
       if (Math.abs(lat - blockedLat) < 0.0001 && Math.abs(lng - blockedLng) < 0.0001) {
+        logToBackground('🚫 Blocked old coords');
         return false;
       }
     }
 
-    // Skip if same as last sent - IMPORTANT: this prevents continuous updates
+    // Skip if same as last sent (prevents spam)
     if (lastSentLat !== null && lastSentLng !== null) {
       if (Math.abs(lastSentLat - lat) < 0.0001 && Math.abs(lastSentLng - lng) < 0.0001) {
         return false;
@@ -71,7 +60,7 @@
     lastSentLat = lat;
     lastSentLng = lng;
 
-    logToBackground('✅ SENT: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+    logToBackground('✅ NEW: ' + lat.toFixed(4) + ', ' + lng.toFixed(4));
 
     try {
       chrome.runtime.sendMessage({
@@ -95,39 +84,6 @@
 
     if (data.type === 'COORDX_COORDS') {
       const { lat, lng, source, roundIndex } = data;
-      
-      // Track what we're receiving
-      if (roundIndex !== null && roundIndex !== undefined) {
-        // Check if this is same coords as before
-        const isSameCoords = lastReceivedLat !== null && 
-          Math.abs(lastReceivedLat - lat) < 0.0001 && 
-          Math.abs(lastReceivedLng - lng) < 0.0001 &&
-          lastReceivedRound === roundIndex;
-        
-        if (isSameCoords) {
-          coordReceiveCount++;
-          
-          // Auto-sync after receiving same coords 5+ times
-          if (coordReceiveCount >= 5 && roundIndex !== lastSyncedRound) {
-            logToBackground('🔄 Auto-sync: r' + currentRoundIndex + ' → r' + roundIndex);
-            currentRoundIndex = roundIndex;
-            lastSyncedRound = roundIndex;
-            // DON'T reset lastSentLat/lng - prevents continuous updates
-          }
-        } else {
-          // Different coords, reset counter
-          coordReceiveCount = 1;
-          lastReceivedLat = lat;
-          lastReceivedLng = lng;
-          lastReceivedRound = roundIndex;
-        }
-        
-        // Filter by round
-        if (roundIndex !== currentRoundIndex) {
-          return; // Silently skip
-        }
-      }
-      
       sendCoords(lat, lng, source);
     }
     
@@ -149,9 +105,6 @@
       blockedLat = null;
       blockedLng = null;
       blockUntil = 0;
-      currentRoundIndex = 0;
-      lastSyncedRound = -1;
-      coordReceiveCount = 0;
       requestMainWorldInjection();
       sendResponse({ success: true });
     }
@@ -171,27 +124,22 @@
   setTimeout(init, 500);
   setTimeout(init, 2000);
 
-  // Handle NEXT button click
+  // Handle NEXT button click - block OLD coords
   document.addEventListener('click', (e) => {
     const text = (e.target?.innerText || '').toUpperCase();
     if (text.includes('NEXT') || text.includes('PLAY')) {
       logToBackground('NEXT clicked');
       
-      currentRoundIndex++;
-      lastSyncedRound = currentRoundIndex;
-      logToBackground('📍 Round: ' + currentRoundIndex);
-      
       if (lastSentLat !== null && lastSentLng !== null) {
         blockedLat = lastSentLat;
         blockedLng = lastSentLng;
-        blockUntil = Date.now() + 10000;
-        logToBackground('Block: ' + blockedLat.toFixed(4));
+        blockUntil = Date.now() + 15000; // 15 seconds block
+        logToBackground('🚫 Block: ' + blockedLat.toFixed(4) + ' for 15s');
       }
       
-      // Reset for new round
+      // Reset to allow new coords
       lastSentLat = null;
       lastSentLng = null;
-      coordReceiveCount = 0;
     }
   }, true);
 
