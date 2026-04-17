@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CoordX Pro",
-  "version": "1.8.57",
+  "version": "1.9.0",
   "description": "GeoGuessr cheat extension — auto-detect Street View coordinates with address info, interactive map, multiplayer support, and auto-place for multiplayer rounds.",
   "permissions": [
     "sidePanel",
@@ -56,14 +56,14 @@
         "*://*.worldguessr.com/*",
         "*://*.crazygames.com/*"
       ],
-      "js": ["content.js"],
+      "js": ["content.js", "floating-panel.js"],
       "run_at": "document_start",
       "all_frames": true
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["map.html", "map.js", "main-world.js", "leaflet/*", "leaflet/images/*"],
+      "resources": ["map.html", "map.js", "main-world.js", "floating-panel.js", "leaflet/*", "leaflet/images/*"],
       "matches": ["<all_urls>"]
     }
   ],

@@ -1,7 +1,7 @@
 # CoordX Pro 🚀 - GeoGuessr Cheat Extension
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=google-chrome&logoColor=white)](https://github.com/arhanpratama5775-ux/CoordX-Pro)
-[![Version](https://img.shields.io/badge/version-1.8.57-blue)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
+[![Version](https://img.shields.io/badge/version-1.9.0-blue)](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > **Auto-detect Street View coordinates untuk GeoGuessr** — Dapatkan koordinat lokasi lengkap dengan alamat, negara, peta interaktif, dan **AUTO PLACE GUESS!** 🎯
@@ -33,17 +33,19 @@
 
 | Feature | Description |
 |---------|-------------|
+| 🎨 **Floating Panel** | Panel melayang di halaman, bisa digerakkan! |
+| 🖱️ **Draggable** | Drag header untuk pindah posisi |
+| 📐 **Resizable** | Drag corner untuk ubah ukuran |
+| ➖ **Minimize/Collapse** | Bisa dikecilin jadi header aja |
 | 🎯 **Auto-detect** | Koordinat otomatis terdeteksi saat Street View load |
 | 🎯 **Auto Place Guess** | Place marker otomatis di map GeoGuessr dengan akurasi pilihan! |
 | 🔄 **Auto Round Detection** | Detect ronde baru di multiplayer |
 | 🤖 **Multiplayer Auto-Place** | Auto-place otomatis saat ronde baru di multiplayer! |
-| 🗺️ **Interactive Map** | Dark theme map dengan Leaflet |
 | 📍 **Reverse Geocoding** | Alamat lengkap via OpenStreetMap |
 | 🏳️ **Country Flag** | Emoji bendera negara di header! |
 | 📋 **Copy Coords** | One-click copy coordinates |
 | 🌙 **Cold Everest Theme** | UI hitam dingin dengan background Everest |
-| ⚡ **Auto Open Panel** | Side panel langsung terbuka saat klik icon |
-| 📱 **Mobile Friendly** | Works di HP tanpa perlu klik tombol tambahan |
+| 📱 **Mobile Friendly** | Works di HP dengan touch support |
 
 ---
 
@@ -51,11 +53,11 @@
 
 ### Download dari Releases
 
-👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.57/CoordX-Pro-v1.8.57.zip)**
+👉 **[Download Latest Release](https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.9.0/CoordX-Pro-v1.9.0.zip)**
 
 Atau download langsung:
 ```
-https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.57/CoordX-Pro-v1.8.57.zip
+https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.9.0/CoordX-Pro-v1.9.0.zip
 ```
 
 ### Installation Steps
@@ -73,10 +75,16 @@ https://github.com/arhanpratama5775-ux/CoordX-Pro/releases/download/v1.8.57/Coor
 ### Basic Usage
 1. Buka **GeoGuessr**
 2. Mulai game (single player atau multiplayer)
-3. Klik icon extension CoordX Pro
-4. **Side panel otomatis terbuka!** ✅
-5. Koordinat akan auto-detect saat Street View load
-6. Ronde berganti? Auto-detect lokasi baru! ✅
+3. **Floating panel otomatis muncul!** ✅
+4. Koordinat akan auto-detect saat Street View load
+5. Ronde berganti? Auto-detect lokasi baru! ✅
+
+### 🖱️ Panel Controls
+- **Drag** → Gerakkan panel dengan drag header
+- **Resize** → Drag pojok kanan bawah untuk ubah ukuran
+- **Minimize (−)** → Kecilkan jadi header saja
+- **Collapse (▼)** → Hide content sementara
+- **Close (×)** → Tutup panel (buka lagi dengan reload)
 
 ### 🎯 Auto Place Guess
 
@@ -747,11 +755,14 @@ GeoGuessr **sangat terbatas** dalam mencegah cheat karena:
 
 ## 📝 Changelog
 
-### v1.8.57 🐛
-- 🐛 **FIXED ERROR!** - Fixed "Cannot read properties of undefined (reading 'url')" error
-- 🏔️ **NEW EXTENSION ICON!** - Logo sekarang pake foto Everest asli!
-- 🎨 Icon yang lebih clean dan matching dengan theme
-- ❄️ Extension icon: 16x16, 48x48, 128x128 (semua dari foto Everest)
+### v1.9.0 🎨
+- 🎨 **FLOATING PANEL!** - Panel sekarang melayang di halaman, bukan sidepanel lagi!
+- 🖱️ **DRAGGABLE** - Panel bisa digerakkan dengan drag header
+- 📐 **RESIZABLE** - Panel bisa dikecilin/dibesarin dengan drag corner
+- ➖ **MINIMIZE/COLLAPSE** - Bisa dikecilin jadi header aja
+- 💾 **SAVE POSITION** - Posisi panel tersimpan otomatis
+- 📱 **MOBILE FRIENDLY** - Touch support untuk drag
+- ⚡ **CLEANER UI** - Lebih simpel dan ringan
 
 ### v1.8.55 ❄️
 - 🏔️ **REAL MOUNT EVEREST BACKGROUND!** - Background pake foto Everest asli!
