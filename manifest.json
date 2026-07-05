@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "CoordX Pro",
+  "version": "2.1.0",
+  "description": "GeoGuessr cheat extension — auto-detect Street View coordinates with address info, interactive map, multiplayer support, and auto-place for multiplayer rounds.",
+  "permissions": [
+    "sidePanel",
+    "webRequest",
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.geoguessr.com/*",
+    "*://*.openguessr.com/*",
+    "*://*.worldguessr.com/*",
+    "*://*.crazygames.com/*",
+    "*://maps.googleapis.com/*",
+    "*://geo0.ggpht.com/*",
+    "*://geo1.ggpht.com/*",
+    "*://geo2.ggpht.com/*",
+    "*://geo3.ggpht.com/*",
+    "*://cbk0.google.com/*",
+    "*://cbk1.google.com/*",
+    "*://cbk2.google.com/*",
+    "*://cbk3.google.com/*",
+    "*://lh3.ggpht.com/*",
+    "*://lh4.ggpht.com/*",
+    "*://lh5.ggpht.com/*",
+    "*://lh6.ggpht.com/*",
+    "*://streetviewpixels-pa.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.geoguessr.com/*",
+        "*://*.openguessr.com/*",
+        "*://*.worldguessr.com/*",
+        "*://*.crazygames.com/*"
+      ],
+      "js": ["content.js", "floating-panel.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["map.html", "map.js", "main-world.js", "floating-panel.js", "leaflet/*", "leaflet/images/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org; connect-src 'self' https://nominatim.openstreetmap.org/ https://*.tile.openstreetmap.org/ https://*.basemaps.cartocdn.com/"
+  }
+}
